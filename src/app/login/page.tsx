@@ -7,13 +7,19 @@ import { Lock, User, Eye, EyeOff, GraduationCap, AlertCircle, Loader2 } from 'lu
 
 function LoginForm() {
   const searchParams = useSearchParams()
-  const inactiveParam = searchParams.get('error') === 'inactive'
+  const errorParam = searchParams.get('error')
+
+  let initialError: string | undefined
+  if (errorParam === 'inactive') {
+    initialError = 'Akun Anda berstatus nonaktif. Silakan hubungi Trainer Anda.'
+  } else if (errorParam === 'env_missing') {
+    initialError =
+      'Koneksi Supabase belum terkonfigurasi di Vercel. Pastikan Environment Variables sudah ditambahkan di dashboard Vercel lalu lakukan Redeploy.'
+  }
 
   const [state, formAction, isPending] = useActionState<AuthState | null, FormData>(
     loginAction,
-    inactiveParam
-      ? { error: 'Akun Anda berstatus nonaktif. Silakan hubungi Trainer Anda.' }
-      : null
+    initialError ? { error: initialError } : null
   )
 
   const [showPassword, setShowPassword] = useState(false)

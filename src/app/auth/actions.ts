@@ -2,6 +2,7 @@
 
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { usernameToEmail } from '@/lib/constants'
 
 export type AuthState = {
@@ -13,20 +14,55 @@ export async function loginAction(
   prevState: AuthState | null,
   formData: FormData
 ): Promise<AuthState> {
-  const username = formData.get('username')?.toString().trim()
+  const rawUsername = formData.get('username')?.toString().trim()
   const password = formData.get('password')?.toString()
 
-  if (!username || !password) {
+  if (!rawUsername || !password) {
     return { error: 'Username dan kata sandi wajib diisi.' }
   }
 
-  const email = usernameToEmail(username)
+  const username = rawUsername.toLowerCase()
 
   try {
+    let emailToAuth: string = usernameToEmail(username)
+
+    // Lookup public.users by username to find the registered email
+    // Use admin client if available to bypass RLS for pre-auth lookup
+    try {
+      const adminClient = createAdminClient()
+      const { data: userProfile, error: profileLookupError } = await adminClient
+        .from('users')
+        .select('id, email, username, is_active, role')
+        .eq('username', username)
+        .maybeSingle()
+
+      if (profileLookupError) {
+        console.error('Profile lookup error:', profileLookupError)
+      } else if (userProfile) {
+        if (!userProfile.is_active) {
+          return {
+            error: 'Akun Anda berstatus nonaktif. Silakan hubungi Trainer Anda.',
+          }
+        }
+        if (userProfile.email) {
+          emailToAuth = userProfile.email
+        }
+      } else {
+        // Username is not found in public.users
+        return {
+          error: 'Username atau kata sandi tidak valid. Pastikan data yang dimasukkan benar.',
+        }
+      }
+    } catch (adminErr) {
+      // If service role is not yet configured, fallback to derived internal email
+      console.warn('Admin client lookup bypassed, falling back to derived email:', adminErr)
+    }
+
+    // Authenticate with Supabase Auth using the resolved email and submitted password
     const supabase = await createClient()
 
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email,
+      email: emailToAuth,
       password,
     })
 
@@ -37,7 +73,7 @@ export async function loginAction(
       }
     }
 
-    // Check active status in users table
+    // Verify profile and role mapping for the authenticated user
     const { data: profile, error: profileError } = await supabase
       .from('users')
       .select('role, is_active, name')
@@ -45,6 +81,7 @@ export async function loginAction(
       .single()
 
     if (profileError || !profile) {
+      console.error('Profile fetch error after auth:', profileError)
       await supabase.auth.signOut()
       return {
         error: 'Profil pengguna tidak ditemukan di sistem. Hubungi administrator.',

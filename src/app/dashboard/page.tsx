@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { Navbar } from '@/components/Navbar'
 import { CheckCircle2, Clock, Sparkles } from 'lucide-react'
 
+export const dynamic = 'force-dynamic'
+
 export default async function TraineeDashboardPage() {
   try {
     const supabase = await createClient()

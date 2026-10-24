@@ -1,7 +1,10 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Navbar } from '@/components/Navbar'
-import { ShieldCheck, Sparkles, Clock } from 'lucide-react'
+import { TraineeListClient, TraineeSummary } from './TraineeListClient'
+import { TermStatus } from '@/types/database'
+
+export const dynamic = 'force-dynamic'
 
 export default async function TrainerDashboardPage() {
   try {
@@ -15,13 +18,13 @@ export default async function TrainerDashboardPage() {
       redirect('/login')
     }
 
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from('users')
       .select('id, name, username, role, level, is_active, branch_id, branches(name)')
       .eq('id', user.id)
       .single()
 
-    if (!profile || !profile.is_active) {
+    if (profileError || !profile || !profile.is_active) {
       redirect('/login?error=inactive')
     }
 
@@ -29,8 +32,127 @@ export default async function TrainerDashboardPage() {
       redirect('/dashboard')
     }
 
+    const branchId = profile.branch_id
     const branchName =
-      (profile.branches as unknown as { name: string } | null)?.name || 'Semua Cabang'
+      (profile.branches as unknown as { name: string } | null)?.name || 'Cabang Belum Ditentukan'
+
+    // 1. Fetch all trainees in the trainer's branch
+    const { data: traineesData, error: traineesError } = await supabase
+      .from('users')
+      .select('id, name, username, level, is_active, created_at')
+      .eq('role', 'trainee')
+      .eq('branch_id', branchId ?? 0)
+      .order('created_at', { ascending: false })
+
+    if (traineesError) {
+      console.error('Error fetching trainees:', traineesError)
+    }
+
+    const traineeList = traineesData || []
+    const traineeIds = traineeList.map((t) => t.id)
+
+    // 2. Fetch trainee_terms for all these trainees
+    let termsData: Array<{
+      id: number
+      trainee_id: string
+      term_id: number
+      status: TermStatus
+      cleared_to_teach: boolean
+      terms: {
+        id: number
+        name: string
+        level: string
+        sort_order: number
+      } | null
+    }> = []
+
+    if (traineeIds.length > 0) {
+      const { data: ttData } = await supabase
+        .from('trainee_terms')
+        .select('id, trainee_id, term_id, status, cleared_to_teach, terms(id, name, level, sort_order)')
+        .in('trainee_id', traineeIds)
+
+      if (ttData) {
+        termsData = ttData as unknown as typeof termsData
+      }
+    }
+
+    // 3. Fetch trainee_lessons for all these trainees
+    let studiedLessonsData: Array<{
+      trainee_id: string
+      lesson_id: number
+      studied: boolean
+      lessons: {
+        term_id: number
+      } | null
+    }> = []
+
+    if (traineeIds.length > 0) {
+      const { data: tlData } = await supabase
+        .from('trainee_lessons')
+        .select('trainee_id, lesson_id, studied, lessons(term_id)')
+        .in('trainee_id', traineeIds)
+        .eq('studied', true)
+
+      if (tlData) {
+        studiedLessonsData = tlData as unknown as typeof studiedLessonsData
+      }
+    }
+
+    // 4. Transform into TraineeSummary structure
+    const trainees: TraineeSummary[] = traineeList.map((trainee) => {
+      // Find all terms for this trainee
+      const userTerms = termsData.filter((t) => t.trainee_id === trainee.id)
+
+      // Completed terms count (status === 'ready_for_trial')
+      const completedTermsCount = userTerms.filter(
+        (t) => t.status === 'ready_for_trial'
+      ).length
+
+      // Active term is the one currently in progress (not ready_for_trial), or the highest sort_order term
+      let activeTermObj = userTerms.find(
+        (t) => t.status !== 'ready_for_trial'
+      )
+
+      if (!activeTermObj && userTerms.length > 0) {
+        // If all are ready_for_trial, pick the highest sort order
+        activeTermObj = [...userTerms].sort(
+          (a, b) => (b.terms?.sort_order || 0) - (a.terms?.sort_order || 0)
+        )[0]
+      }
+
+      let activeTerm = null
+      if (activeTermObj && activeTermObj.terms) {
+        // Count studied lessons for this term
+        const studiedCount = studiedLessonsData.filter(
+          (l) =>
+            l.trainee_id === trainee.id &&
+            l.lessons?.term_id === activeTermObj.terms?.id
+        ).length
+
+        activeTerm = {
+          traineeTermId: activeTermObj.id,
+          termId: activeTermObj.terms.id,
+          termName: activeTermObj.terms.name,
+          sortOrder: activeTermObj.terms.sort_order,
+          status: activeTermObj.status,
+          clearedToTeach: activeTermObj.cleared_to_teach,
+          studiedLessonsCount: studiedCount,
+          totalLessonsCount: 10,
+        }
+      }
+
+      return {
+        id: trainee.id,
+        name: trainee.name,
+        username: trainee.username,
+        level: trainee.level,
+        is_active: trainee.is_active,
+        created_at: trainee.created_at || '',
+        activeTerm,
+        completedTermsCount,
+      }
+    })
 
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
@@ -45,70 +167,7 @@ export default async function TrainerDashboardPage() {
         />
 
         <main className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 lg:p-8">
-          {/* Welcome Banner */}
-          <div className="bg-gradient-to-r from-purple-700 via-indigo-700 to-slate-900 rounded-2xl p-6 sm:p-8 text-white shadow-xl shadow-purple-600/10 mb-8">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div>
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-sm border border-white/15 text-xs font-medium mb-3">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                  <span>Panel Administrator &amp; Trainer</span>
-                </div>
-                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
-                  Halo, Trainer {profile.name}! 👨‍🏫
-                </h1>
-                <p className="text-purple-100 text-sm mt-1 max-w-xl">
-                  Anda memiliki akses penuh untuk mengelola pendaftaran trainee, memverifikasi
-                  pemahaman, dan mencatat observasi di cabang <strong>{branchName}</strong>.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Phase 1 Status Card */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
-                <ShieldCheck className="w-6 h-6" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
-                  Fase 1 Berhasil: Fondasi &amp; Akses Trainer Terverifikasi
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Sesi login aktif sebagai Trainer dengan otorisasi cabang
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-slate-100 dark:border-slate-800 text-sm">
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                <span className="text-xs text-slate-400 block mb-1">Username Trainer</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-200 font-mono">
-                  @{profile.username}
-                </span>
-              </div>
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                <span className="text-xs text-slate-400 block mb-1">Cabang Otoritas</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-200">
-                  {branchName}
-                </span>
-              </div>
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                <span className="text-xs text-slate-400 block mb-1">Hak Akses</span>
-                <span className="font-semibold text-purple-600 dark:text-purple-400">
-                  Trainer / Administrator
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-6 p-4 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-900/50 text-xs text-purple-900 dark:text-purple-300 flex items-center gap-3">
-              <Clock className="w-5 h-5 text-purple-500 shrink-0" />
-              <span>
-                Fitur pendaftaran trainee baru, daftar trainee per cabang, reset password, dan
-                nonaktifkan trainee akan aktif pada <strong>Fase 2 (Admin Trainer)</strong>.
-              </span>
-            </div>
-          </div>
+          <TraineeListClient trainees={trainees} branchName={branchName} />
         </main>
       </div>
     )

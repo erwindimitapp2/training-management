@@ -50,11 +50,10 @@ export async function loginAction(
       } else {
         // Username is not found in public.users
         return {
-          error: 'Username atau kata sandi tidak valid. Pastikan data yang dimasukkan benar.',
+          error: `Username "${username}" tidak ditemukan di sistem. Pastikan ejaan benar.`,
         }
       }
     } catch (adminErr) {
-      // If service role is not yet configured, fallback to derived internal email
       console.warn('Admin client lookup bypassed, falling back to derived email:', adminErr)
     }
 
@@ -68,8 +67,16 @@ export async function loginAction(
 
     if (authError || !authData.user) {
       console.error('Supabase auth error:', authError)
+      // Provide exact diagnostic message in Indonesian
+      if (authError?.message?.includes('Invalid login credentials')) {
+        return {
+          error: 'Kata sandi yang Anda masukkan salah. Periksa kembali huruf besar/kecil.',
+        }
+      }
       return {
-        error: 'Username atau kata sandi tidak valid. Pastikan data yang dimasukkan benar.',
+        error: authError?.message
+          ? `Gagal masuk: ${authError.message}`
+          : 'Username atau kata sandi tidak valid. Pastikan data yang dimasukkan benar.',
       }
     }
 
@@ -84,7 +91,7 @@ export async function loginAction(
       console.error('Profile fetch error after auth:', profileError)
       await supabase.auth.signOut()
       return {
-        error: 'Profil pengguna tidak ditemukan di sistem. Hubungi administrator.',
+        error: 'Profil pengguna tidak ditemukan di tabel users. Hubungi administrator.',
       }
     }
 
@@ -113,9 +120,9 @@ export async function loginAction(
     }
 
     console.error('Login action error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
     return {
-      error:
-        'Terjadi kendala saat menghubungkan ke database server. Pastikan konfigurasi Supabase di Vercel sudah benar.',
+      error: `Kendala server: ${errMessage}`,
     }
   }
 }

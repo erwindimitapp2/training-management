@@ -271,3 +271,65 @@ export async function setTraineeActiveAction(
     return { error: errMessage }
   }
 }
+
+export type TermStatusAction = 'start_check' | 'need_review' | 'ready_for_trial'
+
+/**
+ * 4. changeTermStatusAction
+ * - Verifies active trainer and authorization
+ * - Validates required note on need_review
+ * - Calls change_term_status RPC (which also fires triggers like trg_open_next_term)
+ * - Revalidates trainer dashboard, trainee detail page, and trainee dashboard
+ */
+export async function changeTermStatusAction(
+  traineeTermId: number,
+  action: TermStatusAction,
+  traineeId: string,
+  note?: string
+): Promise<ActionResponse> {
+  try {
+    const trainer = await verifyActiveTrainer()
+
+    if (action === 'need_review') {
+      const trimmedNote = note?.trim()
+      if (!trimmedNote || trimmedNote.length === 0) {
+        return { error: 'Catatan evaluasi wajib diisi untuk tindakan Need Review.' }
+      }
+    }
+
+    const supabase = await createClient()
+
+    const { error } = await supabase.rpc('change_term_status', {
+      p_trainee_term_id: traineeTermId,
+      p_action: action,
+      p_note: note?.trim() || undefined,
+    })
+
+    if (error) {
+      console.error('change_term_status RPC error:', error)
+      return { error: error.message || 'Gagal mengubah status term.' }
+    }
+
+    revalidatePath('/trainer')
+    revalidatePath(`/trainer/trainees/${traineeId}`)
+    revalidatePath('/dashboard')
+
+    let msg = 'Status term berhasil diperbarui.'
+    if (action === 'start_check') {
+      msg = 'Sesi Understanding Check berhasil dimulai!'
+    } else if (action === 'need_review') {
+      msg = 'Catatan Need Review berhasil dikirim. Term dikembalikan ke In Self-Training.'
+    } else if (action === 'ready_for_trial') {
+      msg = 'Term disetujui Ready for Trial Class! Term berikutnya telah otomatis dibuka.'
+    }
+
+    return {
+      success: true,
+      message: msg,
+    }
+  } catch (error: unknown) {
+    console.error('changeTermStatusAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}

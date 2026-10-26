@@ -8,6 +8,7 @@ import {
   changeTermStatusAction,
   TermStatusAction,
   recordObservationAction,
+  changeTraineeBranchAction,
 } from '@/app/trainer/actions'
 import { ProgramLevel, TermStatus, ObservationResult } from '@/types/database'
 import { STATUS_LABELS, STATUS_STYLES, GOLD_BADGE_STYLE } from '@/lib/constants'
@@ -37,6 +38,8 @@ import {
   AlertCircle,
   GraduationCap,
   Star,
+  Building2,
+  MapPin,
 } from 'lucide-react'
 
 export interface TermDetail {
@@ -86,15 +89,28 @@ interface TraineeDetailClientProps {
     name: string
     username: string
     level: ProgramLevel | null
+    branchId: number | null
     branchName: string
     isActive: boolean
     createdAt: string
   }
+  branches: Array<{ id: number; name: string }>
   terms: TermDetail[]
 }
 
-export function TraineeDetailClient({ trainee, terms }: TraineeDetailClientProps) {
+export function TraineeDetailClient({ trainee, branches, terms }: TraineeDetailClientProps) {
   const [isActive, setIsActive] = useState(trainee.isActive)
+  const [branchName, setBranchName] = useState(trainee.branchName)
+  const [branchId, setBranchId] = useState<number | null>(trainee.branchId)
+
+  // Branch change modal state
+  const [isBranchModalOpen, setIsBranchModalOpen] = useState(false)
+  const [targetBranchId, setTargetBranchId] = useState<number>(
+    branches.find((b) => b.id !== trainee.branchId)?.id || branches[0]?.id || 1
+  )
+  const [branchError, setBranchError] = useState<string | null>(null)
+  const [branchSuccess, setBranchSuccess] = useState<string | null>(null)
+  const [isChangingBranch, startBranchTransition] = useTransition()
 
   // Reset password state
   const [isResetOpen, setIsResetOpen] = useState(false)
@@ -244,6 +260,30 @@ export function TraineeDetailClient({ trainee, terms }: TraineeDetailClientProps
     })
   }
 
+  const handleChangeBranch = () => {
+    if (!targetBranchId) return
+    const targetBranch = branches.find((b) => b.id === targetBranchId)
+    if (!targetBranch) return
+
+    setBranchError(null)
+    setBranchSuccess(null)
+
+    startBranchTransition(async () => {
+      const res = await changeTraineeBranchAction(trainee.id, targetBranchId)
+      if (res.error) {
+        setBranchError(res.error)
+      } else {
+        setBranchName(targetBranch.name)
+        setBranchId(targetBranchId)
+        setBranchSuccess(res.message || 'Cabang berhasil dipindahkan.')
+        setTimeout(() => {
+          setIsBranchModalOpen(false)
+          setBranchSuccess(null)
+        }, 1200)
+      }
+    })
+  }
+
   const handleToggleActive = () => {
     const actionName = isActive ? 'menonaktifkan' : 'mengaktifkan kembali'
     if (
@@ -346,18 +386,50 @@ export function TraineeDetailClient({ trainee, terms }: TraineeDetailClientProps
               )}
             </div>
 
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
-              Cabang: <strong>{trainee.branchName}</strong> • Terdaftar:{' '}
-              {new Date(trainee.createdAt).toLocaleDateString('id-ID', {
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric',
-              })}
-            </p>
+            <div className="flex items-center gap-2 mt-1.5 flex-wrap text-xs text-slate-500 dark:text-slate-400">
+              <div className="flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5 text-indigo-500" />
+                <span>Cabang:</span>
+                {branchName === 'Tanpa cabang' || !branchId ? (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                    Tanpa cabang
+                  </span>
+                ) : (
+                  <strong className="text-slate-700 dark:text-slate-200">{branchName}</strong>
+                )}
+              </div>
+              <span>•</span>
+              <span>
+                Terdaftar:{' '}
+                {new Date(trainee.createdAt).toLocaleDateString('id-ID', {
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
+                })}
+              </span>
+            </div>
           </div>
 
           {/* Action buttons */}
-          <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+          <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 flex-wrap">
+            {/* Pindah Cabang Button */}
+            <button
+              id="btn-open-change-branch"
+              type="button"
+              onClick={() => {
+                setIsBranchModalOpen(true)
+                setBranchError(null)
+                setBranchSuccess(null)
+                setTargetBranchId(
+                  branches.find((b) => b.id !== branchId)?.id || branches[0]?.id || 1
+                )
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors cursor-pointer"
+            >
+              <Building2 className="w-3.5 h-3.5 text-indigo-500" />
+              <span>Pindah Cabang</span>
+            </button>
+
             {/* Reset Password Button */}
             <button
               id="btn-open-reset-password"
@@ -397,6 +469,27 @@ export function TraineeDetailClient({ trainee, terms }: TraineeDetailClientProps
             </button>
           </div>
         </div>
+
+        {/* Tanpa Cabang Warning Box */}
+        {(!branchId || branchName === 'Tanpa cabang') && (
+          <div className="mt-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>Trainee ini belum memiliki cabang penempatan. Silakan tetapkan cabang sekarang.</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setIsBranchModalOpen(true)
+                setBranchError(null)
+                setBranchSuccess(null)
+              }}
+              className="self-start sm:self-auto px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs transition-colors shrink-0 cursor-pointer"
+            >
+              Pindah / Tetapkan Cabang
+            </button>
+          </div>
+        )}
 
         {/* Quick summary stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-5 border-t border-slate-100 dark:border-slate-800 text-xs">
@@ -1501,6 +1594,106 @@ export function TraineeDetailClient({ trainee, terms }: TraineeDetailClientProps
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Pindah Cabang */}
+      {isBranchModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800 shadow-xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                  Pindah Cabang Trainee
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBranchModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {branchError && (
+              <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{branchError}</span>
+              </div>
+            )}
+
+            {branchSuccess && (
+              <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{branchSuccess}</span>
+              </div>
+            )}
+
+            <div className="space-y-3 text-xs sm:text-sm">
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 flex justify-between items-center">
+                <span className="text-slate-500">Cabang Saat Ini:</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200">
+                  {branchName || 'Tanpa cabang'}
+                </span>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="targetBranch"
+                  className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5"
+                >
+                  Pilih Cabang Baru <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  id="targetBranch"
+                  value={targetBranchId}
+                  onChange={(e) => setTargetBranchId(Number(e.target.value))}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer"
+                >
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id} disabled={b.id === branchId}>
+                      {b.name} {b.id === branchId ? '(Saat Ini)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-800/50 text-[11px] text-amber-800 dark:text-amber-300">
+                Konfirmasi: Anda akan memindahkan data trainee <strong>@{trainee.username}</strong> ({trainee.name}) ke cabang yang dipilih.
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setIsBranchModalOpen(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                id="btn-confirm-change-branch"
+                type="button"
+                disabled={isChangingBranch || targetBranchId === branchId}
+                onClick={handleChangeBranch}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
+              >
+                {isChangingBranch ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Menyimpan...</span>
+                  </>
+                ) : (
+                  <>
+                    <Building2 className="w-3.5 h-3.5" />
+                    <span>Konfirmasi Pindah</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

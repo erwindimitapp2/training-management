@@ -31,6 +31,14 @@ export default async function RegisterTraineePage() {
   const branchName =
     (profile.branches as unknown as { name: string } | null)?.name || 'Cabang Belum Ditentukan'
 
+  // Fetch all branches for dropdown selection
+  const { data: branchesData } = await supabase
+    .from('branches')
+    .select('id, name')
+    .order('name', { ascending: true })
+
+  const branches = branchesData || []
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
       <Navbar
@@ -61,19 +69,14 @@ export default async function RegisterTraineePage() {
                 <span>Pendaftaran Trainee Baru</span>
               </h1>
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Daftarkan calon pengajar baru. Akun akan langsung memiliki akses ke Term pertama.
+                Daftarkan calon pengajar baru ke cabang pilihan. Akun akan langsung memiliki akses ke Term pertama.
               </p>
-            </div>
-
-            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-300 shrink-0 self-start sm:self-center">
-              <MapPin className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-              <span>Cabang: <strong>{branchName}</strong></span>
             </div>
           </div>
         </div>
 
         {/* Client Form Component */}
-        <RegisterTraineeForm branchName={branchName} />
+        <RegisterTraineeForm branches={branches} defaultBranchId={profile.branch_id} />
       </main>
     </div>
   )

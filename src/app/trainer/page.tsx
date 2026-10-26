@@ -1,13 +1,21 @@
+import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Navbar } from '@/components/Navbar'
-import { TraineeListClient, TraineeSummary } from './TraineeListClient'
+import { TraineeListClient, TraineeSummary, BranchSummary } from './TraineeListClient'
 import { TermStatus } from '@/types/database'
 
 export const dynamic = 'force-dynamic'
 
-export default async function TrainerDashboardPage() {
+interface TrainerDashboardPageProps {
+  searchParams?: Promise<{ cabang?: string }>
+}
+
+export default async function TrainerDashboardPage({ searchParams }: TrainerDashboardPageProps) {
   try {
+    const resolvedSearchParams = searchParams ? await searchParams : undefined
+    const initialCabangParam = resolvedSearchParams?.cabang
+
     const supabase = await createClient()
 
     const {
@@ -32,16 +40,22 @@ export default async function TrainerDashboardPage() {
       redirect('/dashboard')
     }
 
-    const branchId = profile.branch_id
-    const branchName =
-      (profile.branches as unknown as { name: string } | null)?.name || 'Cabang Belum Ditentukan'
+    const trainerBranchName =
+      (profile.branches as unknown as { name: string } | null)?.name || 'Semua Cabang'
 
-    // 1. Fetch all trainees in the trainer's branch
+    // 1. Fetch all branches
+    const { data: branchesData } = await supabase
+      .from('branches')
+      .select('id, name')
+      .order('name', { ascending: true })
+
+    const branches = branchesData || []
+
+    // 2. Fetch all trainees across all branches (Trainer is administrator for all branches)
     const { data: traineesData, error: traineesError } = await supabase
       .from('users')
-      .select('id, name, username, level, is_active, created_at')
+      .select('id, name, username, level, is_active, created_at, branch_id, branches(id, name)')
       .eq('role', 'trainee')
-      .eq('branch_id', branchId ?? 0)
       .order('created_at', { ascending: false })
 
     if (traineesError) {
@@ -51,7 +65,7 @@ export default async function TrainerDashboardPage() {
     const traineeList = traineesData || []
     const traineeIds = traineeList.map((t) => t.id)
 
-    // 2. Fetch trainee_terms for all these trainees
+    // 3. Fetch trainee_terms for all trainees
     let termsData: Array<{
       id: number
       trainee_id: string
@@ -77,7 +91,7 @@ export default async function TrainerDashboardPage() {
       }
     }
 
-    // 3. Fetch trainee_lessons for all these trainees
+    // 4. Fetch trainee_lessons for all trainees
     let studiedLessonsData: Array<{
       trainee_id: string
       lesson_id: number
@@ -99,14 +113,18 @@ export default async function TrainerDashboardPage() {
       }
     }
 
-    // 4. Transform into TraineeSummary structure
+    // 5. Transform into TraineeSummary structure
     const trainees: TraineeSummary[] = traineeList.map((trainee) => {
-      // Find all terms for this trainee
       const userTerms = termsData.filter((t) => t.trainee_id === trainee.id)
 
       // Completed terms count (status === 'ready_for_trial')
       const completedTermsCount = userTerms.filter(
         (t) => t.status === 'ready_for_trial'
+      ).length
+
+      // Cleared to teach terms count (passed observation)
+      const clearedTermsCount = userTerms.filter(
+        (t) => t.cleared_to_teach === true
       ).length
 
       // Active term is the one currently in progress (not ready_for_trial), or the highest sort_order term
@@ -115,7 +133,6 @@ export default async function TrainerDashboardPage() {
       )
 
       if (!activeTermObj && userTerms.length > 0) {
-        // If all are ready_for_trial, pick the highest sort order
         activeTermObj = [...userTerms].sort(
           (a, b) => (b.terms?.sort_order || 0) - (a.terms?.sort_order || 0)
         )[0]
@@ -123,7 +140,6 @@ export default async function TrainerDashboardPage() {
 
       let activeTerm = null
       if (activeTermObj && activeTermObj.terms) {
-        // Count studied lessons for this term
         const studiedCount = studiedLessonsData.filter(
           (l) =>
             l.trainee_id === trainee.id &&
@@ -142,15 +158,43 @@ export default async function TrainerDashboardPage() {
         }
       }
 
+      const branchObj = trainee.branches as unknown as { id: number; name: string } | null
+      const traineeBranchName = branchObj?.name || 'Tanpa cabang'
+      const traineeBranchId = trainee.branch_id
+
       return {
         id: trainee.id,
         name: trainee.name,
         username: trainee.username,
         level: trainee.level,
+        branchId: traineeBranchId,
+        branchName: traineeBranchName,
         is_active: trainee.is_active,
         created_at: trainee.created_at || '',
         activeTerm,
         completedTermsCount,
+        clearedTermsCount,
+      }
+    })
+
+    // 6. Compute summary per branch (one card per branch)
+    const branchSummaries: BranchSummary[] = branches.map((b) => {
+      const branchTrainees = trainees.filter((t) => t.branchId === b.id)
+      const activeTrainees = branchTrainees.filter((t) => t.is_active)
+      const readyForCheck = activeTrainees.filter(
+        (t) => t.activeTerm?.status === 'ready_for_check'
+      )
+      const clearedTerms = branchTrainees.reduce(
+        (acc, t) => acc + (t.clearedTermsCount || 0),
+        0
+      )
+
+      return {
+        branchId: b.id,
+        branchName: b.name,
+        activeTraineesCount: activeTrainees.length,
+        readyForCheckCount: readyForCheck.length,
+        clearedTermsCount: clearedTerms,
       }
     })
 
@@ -161,13 +205,20 @@ export default async function TrainerDashboardPage() {
             name: profile.name,
             username: profile.username,
             role: profile.role,
-            branch_name: branchName,
+            branch_name: `${trainerBranchName} (Semua Cabang)`,
             level: profile.level,
           }}
         />
 
         <main className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 lg:p-8">
-          <TraineeListClient trainees={trainees} branchName={branchName} />
+          <Suspense fallback={<div className="p-8 text-center text-slate-400">Memuat data...</div>}>
+            <TraineeListClient
+              trainees={trainees}
+              branches={branches}
+              branchSummaries={branchSummaries}
+              initialCabang={initialCabangParam}
+            />
+          </Suspense>
         </main>
       </div>
     )

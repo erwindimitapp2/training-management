@@ -38,17 +38,13 @@ async function verifyActiveTrainer() {
     throw new Error('Akses ditolak: Anda bukan Trainer aktif.')
   }
 
-  if (profile.branch_id === null || profile.branch_id === undefined) {
-    throw new Error('Trainer belum memiliki cabang penempatan.')
-  }
-
   return profile
 }
 
 /**
  * 1. registerTrainee
  * - Creates user in auth.users via admin.auth.admin.createUser
- * - Inserts row into public.users with role='trainee', branch_id = trainer.branch_id, level
+ * - Inserts row into public.users with role='trainee', branch_id from form, level
  * - Triggers rollback (deletes auth user) if insert fails
  * - Validates username (3-30 chars, lowercase, numbers, dots, underscores) and password (>= 8 chars)
  * - Database trigger automatically opens the first Term.
@@ -58,12 +54,14 @@ export async function registerTraineeAction(
   formData: FormData
 ): Promise<ActionResponse> {
   try {
-    const trainer = await verifyActiveTrainer()
+    await verifyActiveTrainer()
 
     const name = formData.get('name')?.toString().trim()
     const rawUsername = formData.get('username')?.toString().trim()
     const password = formData.get('password')?.toString()
     const level = formData.get('level')?.toString().trim() as ProgramLevel
+    const rawBranchId = formData.get('branchId')?.toString()
+    const branchId = rawBranchId ? parseInt(rawBranchId, 10) : NaN
 
     // Validation
     if (!name) {
@@ -72,6 +70,10 @@ export async function registerTraineeAction(
 
     if (!rawUsername) {
       return { error: 'Username wajib diisi.' }
+    }
+
+    if (isNaN(branchId)) {
+      return { error: 'Cabang wajib dipilih.' }
     }
 
     const username = rawUsername.toLowerCase()
@@ -92,6 +94,17 @@ export async function registerTraineeAction(
     }
 
     const adminClient = createAdminClient()
+
+    // Validate that branchId exists in branches
+    const { data: branchData, error: branchError } = await adminClient
+      .from('branches')
+      .select('id, name')
+      .eq('id', branchId)
+      .maybeSingle()
+
+    if (branchError || !branchData) {
+      return { error: 'Cabang yang dipilih tidak valid.' }
+    }
 
     // Check if username is already taken in public.users
     const { data: existingUser } = await adminClient
@@ -135,7 +148,7 @@ export async function registerTraineeAction(
       username,
       email,
       role: 'trainee',
-      branch_id: trainer.branch_id,
+      branch_id: branchId,
       level,
       is_active: true,
     })
@@ -152,7 +165,7 @@ export async function registerTraineeAction(
     revalidatePath('/trainer')
     return {
       success: true,
-      message: `Trainee ${name} (@${username}) berhasil didaftarkan!`,
+      message: `Trainee ${name} (@${username}) berhasil didaftarkan di cabang ${branchData.name}!`,
       traineeId: authUserId,
     }
   } catch (error: unknown) {
@@ -164,7 +177,8 @@ export async function registerTraineeAction(
 
 /**
  * 2. resetTraineePassword
- * - Only for trainees within the same branch as the calling trainer
+ * - Caller must be an active trainer
+ * - Target must have role='trainee'
  * - Minimum 8 characters password validation
  */
 export async function resetTraineePasswordAction(
@@ -172,7 +186,7 @@ export async function resetTraineePasswordAction(
   newPassword: string
 ): Promise<ActionResponse> {
   try {
-    const trainer = await verifyActiveTrainer()
+    await verifyActiveTrainer()
 
     if (!newPassword || newPassword.length < 8) {
       return { error: 'Kata sandi baru minimal 8 karakter.' }
@@ -180,7 +194,7 @@ export async function resetTraineePasswordAction(
 
     const adminClient = createAdminClient()
 
-    // Verify trainee belongs to the trainer's branch
+    // Verify target is trainee
     const { data: trainee, error: traineeError } = await adminClient
       .from('users')
       .select('id, name, username, branch_id, role')
@@ -189,10 +203,6 @@ export async function resetTraineePasswordAction(
 
     if (traineeError || !trainee || trainee.role !== 'trainee') {
       return { error: 'Data trainee tidak ditemukan.' }
-    }
-
-    if (trainee.branch_id !== trainer.branch_id) {
-      return { error: 'Anda hanya dapat mengatur password trainee di cabang Anda.' }
     }
 
     // Update password in Supabase Auth
@@ -221,17 +231,18 @@ export async function resetTraineePasswordAction(
 /**
  * 3. setTraineeActive
  * - Sets trainee is_active boolean (data is never deleted)
- * - Only for trainees in the calling trainer's branch
+ * - Caller must be an active trainer
+ * - Target must have role='trainee'
  */
 export async function setTraineeActiveAction(
   traineeId: string,
   isActive: boolean
 ): Promise<ActionResponse> {
   try {
-    const trainer = await verifyActiveTrainer()
+    await verifyActiveTrainer()
     const adminClient = createAdminClient()
 
-    // Verify trainee belongs to the trainer's branch
+    // Verify target is trainee
     const { data: trainee, error: traineeError } = await adminClient
       .from('users')
       .select('id, name, username, branch_id, role, is_active')
@@ -240,10 +251,6 @@ export async function setTraineeActiveAction(
 
     if (traineeError || !trainee || trainee.role !== 'trainee') {
       return { error: 'Data trainee tidak ditemukan.' }
-    }
-
-    if (trainee.branch_id !== trainer.branch_id) {
-      return { error: 'Anda hanya dapat mengubah status trainee di cabang Anda.' }
     }
 
     // Update is_active in public.users
@@ -267,6 +274,80 @@ export async function setTraineeActiveAction(
     }
   } catch (error: unknown) {
     console.error('setTraineeActiveAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}
+
+/**
+ * 3b. changeTraineeBranchAction
+ * - Moves a trainee to a new branch
+ * - Caller must be an active trainer
+ * - Target must have role='trainee'
+ * - Validates branchId against public.branches
+ */
+export async function changeTraineeBranchAction(
+  traineeId: string,
+  branchId: number
+): Promise<ActionResponse> {
+  try {
+    await verifyActiveTrainer()
+
+    if (!traineeId) {
+      return { error: 'ID Trainee tidak valid.' }
+    }
+
+    if (!branchId || isNaN(branchId)) {
+      return { error: 'Pilih cabang tujuan yang valid.' }
+    }
+
+    const adminClient = createAdminClient()
+
+    // Verify target is trainee
+    const { data: trainee, error: traineeError } = await adminClient
+      .from('users')
+      .select('id, name, username, role, branch_id')
+      .eq('id', traineeId)
+      .single()
+
+    if (traineeError || !trainee || trainee.role !== 'trainee') {
+      return { error: 'Data trainee tidak ditemukan.' }
+    }
+
+    // Verify branch exists
+    const { data: branch, error: branchError } = await adminClient
+      .from('branches')
+      .select('id, name')
+      .eq('id', branchId)
+      .maybeSingle()
+
+    if (branchError || !branch) {
+      return { error: 'Cabang yang dipilih tidak terdaftar.' }
+    }
+
+    if (trainee.branch_id === branchId) {
+      return { error: `Trainee sudah berada di cabang ${branch.name}.` }
+    }
+
+    const { error: updateError } = await adminClient
+      .from('users')
+      .update({ branch_id: branchId })
+      .eq('id', traineeId)
+
+    if (updateError) {
+      console.error('Error changing trainee branch:', updateError)
+      return { error: `Gagal memindahkan cabang trainee: ${updateError.message}` }
+    }
+
+    revalidatePath('/trainer')
+    revalidatePath(`/trainer/trainees/${traineeId}`)
+
+    return {
+      success: true,
+      message: `Cabang @${trainee.username} (${trainee.name}) berhasil dipindahkan ke ${branch.name}.`,
+    }
+  } catch (error: unknown) {
+    console.error('changeTraineeBranchAction error:', error)
     const errMessage = error instanceof Error ? error.message : String(error)
     return { error: errMessage }
   }

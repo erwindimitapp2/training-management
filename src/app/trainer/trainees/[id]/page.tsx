@@ -49,13 +49,16 @@ export default async function TraineeDetailPage({ params }: PageProps) {
       redirect('/trainer')
     }
 
-    // Verify branch authorization: trainer can only view trainees in their branch
-    if (traineeData.branch_id !== trainerProfile.branch_id) {
-      redirect('/trainer')
-    }
+    // Fetch branches for branch change feature
+    const { data: branchesData } = await supabase
+      .from('branches')
+      .select('id, name')
+      .order('name', { ascending: true })
+
+    const branches = branchesData || []
 
     const traineeBranchName =
-      (traineeData.branches as unknown as { name: string } | null)?.name || trainerBranchName
+      (traineeData.branches as unknown as { name: string } | null)?.name || 'Tanpa cabang'
     const traineeLevel = (traineeData.level || 'kinder') as ProgramLevel
 
     // 3. Fetch master terms for the trainee's level (6 terms)
@@ -259,10 +262,12 @@ export default async function TraineeDetailPage({ params }: PageProps) {
               name: traineeData.name,
               username: traineeData.username,
               level: traineeLevel,
+              branchId: traineeData.branch_id,
               branchName: traineeBranchName,
               isActive: traineeData.is_active,
               createdAt: traineeData.created_at || '',
             }}
+            branches={branches}
             terms={terms}
           />
         </main>

@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
+import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { resetTraineePasswordAction, setTraineeActiveAction } from './actions'
 import { ProgramLevel, TermStatus } from '@/types/database'
 import { STATUS_LABELS, STATUS_STYLES } from '@/lib/constants'
@@ -22,6 +23,8 @@ import {
   Loader2,
   X,
   ShieldAlert,
+  MapPin,
+  Building2,
 } from 'lucide-react'
 
 export type TraineeSummary = {
@@ -29,6 +32,8 @@ export type TraineeSummary = {
   name: string
   username: string
   level: ProgramLevel | null
+  branchId: number | null
+  branchName: string
   is_active: boolean
   created_at: string
   activeTerm: {
@@ -42,14 +47,57 @@ export type TraineeSummary = {
     totalLessonsCount: number
   } | null
   completedTermsCount: number
+  clearedTermsCount?: number
+}
+
+export type BranchSummary = {
+  branchId: number
+  branchName: string
+  activeTraineesCount: number
+  readyForCheckCount: number
+  clearedTermsCount: number
 }
 
 interface TraineeListClientProps {
   trainees: TraineeSummary[]
-  branchName: string
+  branches: Array<{ id: number; name: string }>
+  branchSummaries: BranchSummary[]
+  initialCabang?: string
 }
 
-export function TraineeListClient({ trainees, branchName }: TraineeListClientProps) {
+export function TraineeListClient({
+  trainees,
+  branches,
+  branchSummaries,
+  initialCabang,
+}: TraineeListClientProps) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const pathname = usePathname()
+
+  const currentCabangParam = searchParams.get('cabang') ?? initialCabang
+
+  // Derived selected branch: 'all' | number
+  const selectedBranch: 'all' | number = (() => {
+    if (!currentCabangParam || currentCabangParam === 'all') return 'all'
+    const parsed = parseInt(currentCabangParam, 10)
+    if (!isNaN(parsed) && branches.some((b) => b.id === parsed)) {
+      return parsed
+    }
+    return 'all'
+  })()
+
+  const handleBranchSelect = (branch: 'all' | number) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (branch === 'all') {
+      params.delete('cabang')
+    } else {
+      params.set('cabang', String(branch))
+    }
+    const qs = params.toString()
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+  }
+
   const [search, setSearch] = useState('')
   const [levelFilter, setLevelFilter] = useState<'all' | 'kinder' | 'junior'>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | TermStatus>('all')
@@ -66,12 +114,15 @@ export function TraineeListClient({ trainees, branchName }: TraineeListClientPro
   const [activeToggleId, setActiveToggleId] = useState<string | null>(null)
   const [isToggling, startToggleTransition] = useTransition()
 
-  // Filter queue for Ready for Check
+  // Filter queue for Ready for Check (respects selected branch filter)
   const readyForCheckQueue = trainees.filter(
-    (t) => t.is_active && t.activeTerm?.status === 'ready_for_check'
+    (t) =>
+      t.is_active &&
+      t.activeTerm?.status === 'ready_for_check' &&
+      (selectedBranch === 'all' || t.branchId === selectedBranch)
   )
 
-  // Filtered trainees list
+  // Filtered trainees list (combines search, level, status, branch)
   const filteredTrainees = trainees.filter((t) => {
     // Search by name or username
     const matchesSearch =
@@ -85,7 +136,11 @@ export function TraineeListClient({ trainees, branchName }: TraineeListClientPro
     const matchesStatus =
       statusFilter === 'all' || t.activeTerm?.status === statusFilter
 
-    return matchesSearch && matchesLevel && matchesStatus
+    // Filter by branch
+    const matchesBranch =
+      selectedBranch === 'all' || t.branchId === selectedBranch
+
+    return matchesSearch && matchesLevel && matchesStatus && matchesBranch
   })
 
   const handleResetPassword = () => {
@@ -130,17 +185,22 @@ export function TraineeListClient({ trainees, branchName }: TraineeListClientPro
     })
   }
 
+  const selectedBranchName =
+    selectedBranch === 'all'
+      ? 'Semua Cabang'
+      : branches.find((b) => b.id === selectedBranch)?.name || 'Cabang Terpilih'
+
   return (
     <div className="space-y-6">
       {/* Top Action Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
-            Manajemen Trainee
+            Monitoring &amp; Manajemen Trainee
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            Cabang: <strong className="text-slate-700 dark:text-slate-300">{branchName}</strong>{' '}
-            • Total: {trainees.length} Trainee
+            Filter Cabang: <strong className="text-slate-700 dark:text-slate-300">{selectedBranchName}</strong>{' '}
+            • Menampilkan: {filteredTrainees.length} dari {trainees.length} Trainee
           </p>
         </div>
 
@@ -154,6 +214,99 @@ export function TraineeListClient({ trainees, branchName }: TraineeListClientPro
         </Link>
       </div>
 
+      {/* Ringkasan per Cabang (Satu kartu per cabang, klik kartu = filter cabang) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {branchSummaries.map((summary) => {
+          const isSelected = selectedBranch === summary.branchId
+          return (
+            <div
+              key={summary.branchId}
+              onClick={() => handleBranchSelect(summary.branchId)}
+              className={`p-5 rounded-2xl border transition-all cursor-pointer select-none group shadow-sm ${
+                isSelected
+                  ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-500 dark:border-indigo-500 ring-2 ring-indigo-500/30'
+                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-md'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${
+                      isSelected
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 group-hover:bg-indigo-100 group-hover:text-indigo-600 dark:group-hover:bg-indigo-950/60 dark:group-hover:text-indigo-400'
+                    }`}
+                  >
+                    <MapPin className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
+                      <span>{summary.branchName}</span>
+                    </h3>
+                    <span className="text-[11px] text-slate-400">
+                      {isSelected ? 'Filter Aktif Terpilih' : 'Klik kartu untuk filter cabang ini'}
+                    </span>
+                  </div>
+                </div>
+
+                {isSelected && (
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-indigo-600 text-white shadow-xs">
+                    Dipilih
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60">
+                  <span className="block text-[11px] text-slate-500 dark:text-slate-400 font-medium mb-0.5">
+                    Trainee Aktif
+                  </span>
+                  <span className="text-lg font-bold text-slate-900 dark:text-white">
+                    {summary.activeTraineesCount}
+                  </span>
+                </div>
+
+                <div
+                  className={`p-2.5 rounded-xl border ${
+                    summary.readyForCheckCount > 0
+                      ? 'bg-amber-50/80 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200'
+                      : 'bg-white/80 dark:bg-slate-800/60 border-slate-200/60 dark:border-slate-700/60 text-slate-900 dark:text-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-1 mb-0.5">
+                    {summary.readyForCheckCount > 0 && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                    )}
+                    <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                      Ready for Check
+                    </span>
+                  </div>
+                  <span
+                    className={`text-lg font-bold ${
+                      summary.readyForCheckCount > 0
+                        ? 'text-amber-600 dark:text-amber-400'
+                        : 'text-slate-900 dark:text-white'
+                    }`}
+                  >
+                    {summary.readyForCheckCount}
+                  </span>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60">
+                  <span className="block text-[11px] text-slate-500 dark:text-slate-400 font-medium mb-0.5">
+                    Layak Mengajar
+                  </span>
+                  <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
+                    {summary.clearedTermsCount}{' '}
+                    <span className="text-xs font-normal text-slate-400">Term</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
       {/* HIGHLIGHT: Antrean Ready for Check */}
       {readyForCheckQueue.length > 0 && (
         <section
@@ -163,7 +316,10 @@ export function TraineeListClient({ trainees, branchName }: TraineeListClientPro
           <div className="flex items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300 font-bold text-sm">
               <span className="flex h-2.5 w-2.5 rounded-full bg-amber-500 animate-pulse" />
-              <span>Antrean Ready for Check ({readyForCheckQueue.length})</span>
+              <span>
+                Antrean Ready for Check ({readyForCheckQueue.length})
+                {selectedBranch !== 'all' && ` - Cabang ${selectedBranchName}`}
+              </span>
             </div>
             <span className="text-[11px] font-medium text-amber-700 dark:text-amber-400 hidden sm:inline">
               Membutuhkan verifikasi Understanding Check oleh Trainer
@@ -184,9 +340,15 @@ export function TraineeListClient({ trainees, branchName }: TraineeListClientPro
                       </h4>
                       <p className="text-xs text-slate-500 font-mono">@{item.username}</p>
                     </div>
-                    <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
-                      {item.level}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
+                        {item.level}
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-[10px] text-slate-400">
+                        <MapPin className="w-2.5 h-2.5 text-indigo-500" />
+                        <span>{item.branchName}</span>
+                      </span>
+                    </div>
                   </div>
 
                   <div className="mt-3 flex items-center justify-between text-xs py-1.5 px-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200">
@@ -210,6 +372,45 @@ export function TraineeListClient({ trainees, branchName }: TraineeListClientPro
 
       {/* Filters & Search Controls */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+        {/* Cabang Filter Buttons */}
+        <div className="flex flex-wrap items-center gap-1.5 pb-2.5 border-b border-slate-100 dark:border-slate-800 text-xs">
+          <div className="flex items-center gap-1.5 text-slate-400 font-medium mr-1">
+            <MapPin className="w-3.5 h-3.5" />
+            <span>Cabang:</span>
+          </div>
+          <button
+            onClick={() => handleBranchSelect('all')}
+            className={`px-3 py-1.5 rounded-xl font-medium transition-colors cursor-pointer ${
+              selectedBranch === 'all'
+                ? 'bg-indigo-600 text-white font-semibold shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+          >
+            Semua Cabang ({trainees.length})
+          </button>
+          {branches.map((b) => {
+            const count = trainees.filter((t) => t.branchId === b.id).length
+            return (
+              <button
+                key={b.id}
+                onClick={() => handleBranchSelect(b.id)}
+                className={`px-3 py-1.5 rounded-xl font-medium transition-colors cursor-pointer ${
+                  selectedBranch === b.id
+                    ? 'bg-indigo-600 text-white font-semibold shadow-xs'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                {b.name} ({count})
+              </button>
+            )
+          })}
+          {trainees.some((t) => !t.branchId) && (
+            <span className="px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 font-medium">
+              Tanpa cabang: {trainees.filter((t) => !t.branchId).length}
+            </span>
+          )}
+        </div>
+
         <div className="flex flex-col sm:flex-row gap-3">
           {/* Search bar */}
           <div className="relative flex-1">
@@ -317,7 +518,9 @@ export function TraineeListClient({ trainees, branchName }: TraineeListClientPro
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-12 text-center border border-slate-200 dark:border-slate-800">
           <p className="text-slate-500 dark:text-slate-400 text-sm">
             {trainees.length === 0
-              ? 'Belum ada trainee yang terdaftar di cabang ini.'
+              ? 'Belum ada trainee yang terdaftar.'
+              : selectedBranch !== 'all'
+              ? `Tidak ada trainee di cabang ${selectedBranchName} yang cocok dengan filter.`
               : 'Tidak ada trainee yang cocok dengan kriteria filter.'}
           </p>
           {trainees.length === 0 && (
@@ -337,6 +540,7 @@ export function TraineeListClient({ trainees, branchName }: TraineeListClientPro
               <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200 dark:border-slate-800">
                 <tr>
                   <th className="py-3.5 px-4">Trainee</th>
+                  <th className="py-3.5 px-4">Cabang</th>
                   <th className="py-3.5 px-4">Level</th>
                   <th className="py-3.5 px-4">Term Aktif &amp; Status</th>
                   <th className="py-3.5 px-4">Progres Lesson</th>
@@ -369,6 +573,29 @@ export function TraineeListClient({ trainees, branchName }: TraineeListClientPro
                             @{trainee.username}
                           </span>
                         </div>
+                      </td>
+
+                      {/* Cabang */}
+                      <td className="py-3.5 px-4">
+                        {trainee.branchId ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                            <MapPin className="w-3 h-3 text-indigo-500 shrink-0" />
+                            <span>{trainee.branchName}</span>
+                          </span>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                              Tanpa cabang
+                            </span>
+                            <Link
+                              href={`/trainer/trainees/${trainee.id}`}
+                              className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-semibold"
+                              title="Tetapkan cabang di halaman detail"
+                            >
+                              Pindah
+                            </Link>
+                          </div>
+                        )}
                       </td>
 
                       {/* Level */}

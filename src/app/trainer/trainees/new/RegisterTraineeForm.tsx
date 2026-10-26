@@ -16,17 +16,31 @@ import {
   ArrowRight,
   BookOpen,
   RotateCcw,
+  MapPin,
 } from 'lucide-react'
 
-export function RegisterTraineeForm({ branchName }: { branchName: string }) {
+interface RegisterTraineeFormProps {
+  branches: Array<{ id: number; name: string }>
+  defaultBranchId?: number | null
+}
+
+export function RegisterTraineeForm({ branches, defaultBranchId }: RegisterTraineeFormProps) {
   const [state, formAction, isPending] = useActionState<ActionResponse | null, FormData>(
     registerTraineeAction,
     null
   )
 
+  const [selectedBranchId, setSelectedBranchId] = useState<number>(
+    defaultBranchId && branches.some((b) => b.id === defaultBranchId)
+      ? defaultBranchId
+      : branches[0]?.id || 1
+  )
   const [showPassword, setShowPassword] = useState(false)
   const [selectedLevel, setSelectedLevel] = useState<'kinder' | 'junior'>('kinder')
   const [enteredUsername, setEnteredUsername] = useState('')
+
+  const chosenBranchName =
+    branches.find((b) => b.id === selectedBranchId)?.name || 'Cabang Terpilih'
 
   if (state?.success) {
     return (
@@ -45,7 +59,7 @@ export function RegisterTraineeForm({ branchName }: { branchName: string }) {
         <div className="mt-6 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 text-xs sm:text-sm space-y-2">
           <div className="flex justify-between items-center py-1 border-b border-slate-200/60 dark:border-slate-700/60">
             <span className="text-slate-500 dark:text-slate-400">Cabang</span>
-            <span className="font-semibold text-slate-800 dark:text-slate-200">{branchName}</span>
+            <span className="font-semibold text-slate-800 dark:text-slate-200">{chosenBranchName}</span>
           </div>
           <div className="flex justify-between items-center py-1 border-b border-slate-200/60 dark:border-slate-700/60">
             <span className="text-slate-500 dark:text-slate-400">Username Login</span>
@@ -96,6 +110,38 @@ export function RegisterTraineeForm({ branchName }: { branchName: string }) {
       )}
 
       <form action={formAction} className="space-y-5">
+        {/* Cabang Penempatan (Dropdown) */}
+        <div>
+          <label
+            htmlFor="branchId"
+            className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5"
+          >
+            Cabang Penempatan <span className="text-rose-500">*</span>
+          </label>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+              <MapPin className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+            </div>
+            <select
+              id="branchId"
+              name="branchId"
+              required
+              value={selectedBranchId}
+              onChange={(e) => setSelectedBranchId(Number(e.target.value))}
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 text-sm transition-colors cursor-pointer"
+            >
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+            Trainee akan terdaftar dan dikelompokkan dalam cabang ini.
+          </p>
+        </div>
+
         {/* Full Name */}
         <div>
           <label

@@ -2,8 +2,13 @@ import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Navbar } from '@/components/Navbar'
-import { TraineeListClient, TraineeSummary, BranchSummary } from './TraineeListClient'
-import { TermStatus } from '@/types/database'
+import {
+  TraineeListClient,
+  TraineeSummary,
+  BranchSummary,
+  ReadyForCheckQueueItem,
+} from './TraineeListClient'
+import { ProgramLevel, TermStatus } from '@/types/database'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,7 +56,21 @@ export default async function TrainerDashboardPage({ searchParams }: TrainerDash
 
     const branches = branchesData || []
 
-    // 2. Fetch all trainees across all branches (Trainer is administrator for all branches)
+    // 2. Fetch master terms to know level for every term
+    const { data: masterTermsData } = await supabase
+      .from('terms')
+      .select('id, level, name, sort_order')
+      .order('sort_order', { ascending: true })
+
+    const masterTerms = masterTermsData || []
+    const kinderTermIds = new Set(
+      masterTerms.filter((t) => t.level === 'kinder').map((t) => t.id)
+    )
+    const juniorTermIds = new Set(
+      masterTerms.filter((t) => t.level === 'junior').map((t) => t.id)
+    )
+
+    // 3. Fetch all trainees across all branches
     const { data: traineesData, error: traineesError } = await supabase
       .from('users')
       .select('id, name, username, level, is_active, created_at, branch_id, branches(id, name)')
@@ -65,7 +84,7 @@ export default async function TrainerDashboardPage({ searchParams }: TrainerDash
     const traineeList = traineesData || []
     const traineeIds = traineeList.map((t) => t.id)
 
-    // 3. Fetch trainee_terms for all trainees
+    // 4. Fetch trainee_terms for all trainees
     let termsData: Array<{
       id: number
       trainee_id: string
@@ -91,7 +110,7 @@ export default async function TrainerDashboardPage({ searchParams }: TrainerDash
       }
     }
 
-    // 4. Fetch trainee_lessons for all trainees
+    // 5. Fetch studied lessons for all trainees
     let studiedLessonsData: Array<{
       trainee_id: string
       lesson_id: number
@@ -113,12 +132,23 @@ export default async function TrainerDashboardPage({ searchParams }: TrainerDash
       }
     }
 
-    // 5. Transform into TraineeSummary structure
+    // 6. Build TraineeSummary list
     const trainees: TraineeSummary[] = traineeList.map((trainee) => {
       const userTerms = termsData.filter((t) => t.trainee_id === trainee.id)
+      const userStudied = studiedLessonsData.filter((l) => l.trainee_id === trainee.id)
+
+      // Count kinder studied lessons (0..60)
+      const kinderLessonsStudied = userStudied.filter((l) =>
+        kinderTermIds.has(l.lessons?.term_id || 0)
+      ).length
+
+      // Count junior studied lessons (0..60)
+      const juniorLessonsStudied = userStudied.filter((l) =>
+        juniorTermIds.has(l.lessons?.term_id || 0)
+      ).length
 
       // Completed terms count (status === 'ready_for_trial')
-      const completedTermsCount = userTerms.filter(
+      const readyForTrialCount = userTerms.filter(
         (t) => t.status === 'ready_for_trial'
       ).length
 
@@ -127,74 +157,83 @@ export default async function TrainerDashboardPage({ searchParams }: TrainerDash
         (t) => t.cleared_to_teach === true
       ).length
 
-      // Active term is the one currently in progress (not ready_for_trial), or the highest sort_order term
-      let activeTermObj = userTerms.find(
-        (t) => t.status !== 'ready_for_trial'
-      )
-
-      if (!activeTermObj && userTerms.length > 0) {
-        activeTermObj = [...userTerms].sort(
-          (a, b) => (b.terms?.sort_order || 0) - (a.terms?.sort_order || 0)
-        )[0]
-      }
-
-      let activeTerm = null
-      if (activeTermObj && activeTermObj.terms) {
-        const studiedCount = studiedLessonsData.filter(
-          (l) =>
-            l.trainee_id === trainee.id &&
-            l.lessons?.term_id === activeTermObj.terms?.id
-        ).length
-
-        activeTerm = {
-          traineeTermId: activeTermObj.id,
-          termId: activeTermObj.terms.id,
-          termName: activeTermObj.terms.name,
-          sortOrder: activeTermObj.terms.sort_order,
-          status: activeTermObj.status,
-          clearedToTeach: activeTermObj.cleared_to_teach,
-          studiedLessonsCount: studiedCount,
-          totalLessonsCount: 10,
-        }
-      }
-
       const branchObj = trainee.branches as unknown as { id: number; name: string } | null
       const traineeBranchName = branchObj?.name || 'Tanpa cabang'
-      const traineeBranchId = trainee.branch_id
 
       return {
         id: trainee.id,
         name: trainee.name,
         username: trainee.username,
-        level: trainee.level,
-        branchId: traineeBranchId,
+        branchId: trainee.branch_id,
         branchName: traineeBranchName,
         is_active: trainee.is_active,
         created_at: trainee.created_at || '',
-        activeTerm,
-        completedTermsCount,
+        kinderLessonsStudied,
+        juniorLessonsStudied,
+        readyForTrialCount,
         clearedTermsCount,
       }
     })
 
-    // 6. Compute summary per branch (one card per branch)
+    // 7. Build Ready for Check Queue (one item per TERM in ready_for_check)
+    const readyForCheckQueue: ReadyForCheckQueueItem[] = []
+    for (const tt of termsData) {
+      if (tt.status === 'ready_for_check') {
+        const trainee = traineeList.find((t) => t.id === tt.trainee_id)
+        if (trainee && trainee.is_active && tt.terms) {
+          const branchObj = trainee.branches as unknown as { id: number; name: string } | null
+          readyForCheckQueue.push({
+            traineeTermId: tt.id,
+            traineeId: trainee.id,
+            traineeName: trainee.name,
+            username: trainee.username,
+            branchId: trainee.branch_id,
+            branchName: branchObj?.name || 'Tanpa cabang',
+            termId: tt.terms.id,
+            termName: tt.terms.name,
+            level: tt.terms.level as ProgramLevel,
+            sortOrder: tt.terms.sort_order,
+          })
+        }
+      }
+    }
+
+    // Sort queue by term level and sort_order
+    readyForCheckQueue.sort((a, b) => {
+      if (a.level !== b.level) {
+        return a.level.localeCompare(b.level)
+      }
+      return a.sortOrder - b.sortOrder
+    })
+
+    // 8. Compute summary per branch (one card per branch) based on term status counts
     const branchSummaries: BranchSummary[] = branches.map((b) => {
-      const branchTrainees = trainees.filter((t) => t.branchId === b.id)
-      const activeTrainees = branchTrainees.filter((t) => t.is_active)
-      const readyForCheck = activeTrainees.filter(
-        (t) => t.activeTerm?.status === 'ready_for_check'
-      )
-      const clearedTerms = branchTrainees.reduce(
-        (acc, t) => acc + (t.clearedTermsCount || 0),
-        0
-      )
+      const branchTrainees = traineeList.filter((t) => t.branch_id === b.id)
+      const activeBranchTrainees = branchTrainees.filter((t) => t.is_active)
+      const activeTraineeIdSet = new Set(activeBranchTrainees.map((t) => t.id))
+
+      // All terms of active trainees in this branch
+      const branchTerms = termsData.filter((t) => activeTraineeIdSet.has(t.trainee_id))
+
+      const readyForCheckCount = branchTerms.filter(
+        (t) => t.status === 'ready_for_check'
+      ).length
+
+      const readyForTrialCount = branchTerms.filter(
+        (t) => t.status === 'ready_for_trial'
+      ).length
+
+      const clearedTermsCount = branchTerms.filter(
+        (t) => t.cleared_to_teach === true
+      ).length
 
       return {
         branchId: b.id,
         branchName: b.name,
-        activeTraineesCount: activeTrainees.length,
-        readyForCheckCount: readyForCheck.length,
-        clearedTermsCount: clearedTerms,
+        activeTraineesCount: activeBranchTrainees.length,
+        readyForCheckCount,
+        readyForTrialCount,
+        clearedTermsCount,
       }
     })
 
@@ -206,7 +245,7 @@ export default async function TrainerDashboardPage({ searchParams }: TrainerDash
             username: profile.username,
             role: profile.role,
             branch_name: `${trainerBranchName} (Semua Cabang)`,
-            level: profile.level,
+            level: null,
           }}
         />
 
@@ -214,6 +253,7 @@ export default async function TrainerDashboardPage({ searchParams }: TrainerDash
           <Suspense fallback={<div className="p-8 text-center text-slate-400">Memuat data...</div>}>
             <TraineeListClient
               trainees={trainees}
+              readyForCheckQueue={readyForCheckQueue}
               branches={branches}
               branchSummaries={branchSummaries}
               initialCabang={initialCabangParam}

@@ -36,7 +36,6 @@ export function RegisterTraineeForm({ branches, defaultBranchId }: RegisterTrain
       : branches[0]?.id || 1
   )
   const [showPassword, setShowPassword] = useState(false)
-  const [selectedLevel, setSelectedLevel] = useState<'kinder' | 'junior'>('kinder')
   const [enteredUsername, setEnteredUsername] = useState('')
 
   const chosenBranchName =
@@ -238,63 +237,7 @@ export function RegisterTraineeForm({ branches, defaultBranchId }: RegisterTrain
           </div>
         </div>
 
-        {/* Level Selection */}
-        <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">
-            Level Program Pelatihan <span className="text-rose-500">*</span>
-          </label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label
-              className={`relative flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-all ${
-                selectedLevel === 'kinder'
-                  ? 'border-indigo-600 bg-indigo-50/60 dark:bg-indigo-950/30 ring-1 ring-indigo-600'
-                  : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-              }`}
-            >
-              <input
-                type="radio"
-                name="level"
-                value="kinder"
-                checked={selectedLevel === 'kinder'}
-                onChange={() => setSelectedLevel('kinder')}
-                className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
-              />
-              <div>
-                <span className="block font-semibold text-sm text-slate-900 dark:text-white">
-                  Kinder Level
-                </span>
-                <span className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Pelatihan pengajar kelas anak usia dini (PAUD/TK). Total 6 Term x 10 Lesson.
-                </span>
-              </div>
-            </label>
 
-            <label
-              className={`relative flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-all ${
-                selectedLevel === 'junior'
-                  ? 'border-indigo-600 bg-indigo-50/60 dark:bg-indigo-950/30 ring-1 ring-indigo-600'
-                  : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-              }`}
-            >
-              <input
-                type="radio"
-                name="level"
-                value="junior"
-                checked={selectedLevel === 'junior'}
-                onChange={() => setSelectedLevel('junior')}
-                className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
-              />
-              <div>
-                <span className="block font-semibold text-sm text-slate-900 dark:text-white">
-                  Junior Level
-                </span>
-                <span className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Pelatihan pengajar tingkat dasar (SD). Total 6 Term x 10 Lesson.
-                </span>
-              </div>
-            </label>
-          </div>
-        </div>
 
         {/* Submit Button */}
         <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-3">

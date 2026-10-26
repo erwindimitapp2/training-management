@@ -203,7 +203,7 @@ export function TermChecklistClient({
             </div>
 
             <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight mt-2">
-              {term.name}
+              <span className="capitalize">{term.level}</span> · {term.name}
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
               Pelajari materi mandiri pada setiap lesson dan beri centang setelah selesai.

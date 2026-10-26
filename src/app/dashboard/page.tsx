@@ -1,20 +1,9 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Navbar } from '@/components/Navbar'
-import Link from 'next/link'
 import { TermStatus } from '@/types/database'
-import { STATUS_LABELS, STATUS_STYLES, GOLD_BADGE_STYLE } from '@/lib/constants'
-import {
-  Sparkles,
-  Lock,
-  ArrowRight,
-  CheckCircle2,
-  Award,
-  BookOpen,
-  GraduationCap,
-  Clock,
-  Compass,
-} from 'lucide-react'
+import { Sparkles, Award, GraduationCap, BookOpen, Layers } from 'lucide-react'
+import { DashboardTabsClient, TermCardItem } from './DashboardTabsClient'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,14 +36,16 @@ export default async function TraineeDashboardPage() {
 
     const branchName =
       (profile.branches as unknown as { name: string } | null)?.name || 'Cabang Belum Ditentukan'
-    const traineeLevel = profile.level || 'kinder'
 
-    // 2. Fetch all 6 master terms for trainee's level
+    // 2. Fetch all 12 master terms (Kinder & Junior, 6 each)
     const { data: masterTerms, error: termsError } = await supabase
       .from('terms')
       .select('id, name, sort_order, level')
-      .eq('level', traineeLevel)
       .order('sort_order', { ascending: true })
+
+    if (termsError) {
+      console.error('Error fetching master terms:', termsError)
+    }
 
     const termsList = masterTerms || []
 
@@ -80,7 +71,7 @@ export default async function TraineeDashboardPage() {
     }>
 
     // 5. Build term cards data
-    const termsWithProgress = termsList.map((term) => {
+    const mapTermData = (term: (typeof termsList)[number]): TermCardItem => {
       const tt = traineeTerms.find((t) => t.term_id === term.id)
       const studiedInTerm = studiedLessons.filter(
         (l) => l.lessons?.term_id === term.id
@@ -91,27 +82,45 @@ export default async function TraineeDashboardPage() {
         name: term.name,
         sortOrder: term.sort_order,
         level: term.level,
-        isUnlocked: tt !== undefined,
-        traineeTermId: tt?.id,
-        status: tt?.status as TermStatus | undefined,
+        status: (tt?.status as TermStatus) || 'in_self_training',
         clearedToTeach: tt?.cleared_to_teach || false,
         completedAt: tt?.completed_at,
         studiedLessonsCount: studiedInTerm,
         totalLessonsCount: 10,
       }
-    })
+    }
 
-    // Overall stats
+    const kinderTermsWithProgress: TermCardItem[] = termsList
+      .filter((t) => t.level === 'kinder')
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map(mapTermData)
+
+    const juniorTermsWithProgress: TermCardItem[] = termsList
+      .filter((t) => t.level === 'junior')
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map(mapTermData)
+
+    // Overall stats (12 terms x 10 lessons = 120 total)
     const totalLessonsStudied = studiedLessons.length
-    const totalTermsCompleted = traineeTerms.filter(
+    const kinderLessonsStudied = kinderTermsWithProgress.reduce(
+      (sum, t) => sum + t.studiedLessonsCount,
+      0
+    )
+    const juniorLessonsStudied = juniorTermsWithProgress.reduce(
+      (sum, t) => sum + t.studiedLessonsCount,
+      0
+    )
+
+    const totalReadyForTrial = traineeTerms.filter(
       (t) => t.status === 'ready_for_trial'
     ).length
     const totalClearedToTeach = traineeTerms.filter(
       (t) => t.cleared_to_teach
     ).length
+
     const overallProgressPercent = Math.min(
       100,
-      Math.round((totalLessonsStudied / 60) * 100)
+      Math.round((totalLessonsStudied / 120) * 100)
     )
 
     return (
@@ -122,7 +131,7 @@ export default async function TraineeDashboardPage() {
             username: profile.username,
             role: profile.role,
             branch_name: branchName,
-            level: profile.level,
+            level: null,
           }}
         />
 
@@ -133,7 +142,7 @@ export default async function TraineeDashboardPage() {
               <div className="space-y-2 max-w-xl">
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-sm border border-white/15 text-xs font-semibold">
                   <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                  <span className="capitalize">{traineeLevel} Training Program</span>
+                  <span>Program Pelatihan Lengkap (Kinder &amp; Junior)</span>
                   <span>•</span>
                   <span>Cabang {branchName}</span>
                 </div>
@@ -142,7 +151,7 @@ export default async function TraineeDashboardPage() {
                   Halo, {profile.name}! 👋
                 </h1>
                 <p className="text-indigo-100 text-xs sm:text-sm leading-relaxed">
-                  Pantau pembelajaran mandiri Anda di sini. Pelajari setiap lesson, centang ceklis, dan ajukan <strong>Ready for Check</strong> kepada Trainer untuk melanjutkan ke term berikutnya.
+                  Semua materi di level Kinder dan Junior kini terbuka penuh. Anda dapat mempelajari lesson dalam urutan bebas. Setelah 10 lesson pada suatu term tercentang, ajukan <strong>Ready for Check</strong> kepada Trainer.
                 </p>
               </div>
 
@@ -161,8 +170,8 @@ export default async function TraineeDashboardPage() {
                 </div>
 
                 <div className="flex items-center justify-between text-[11px] text-indigo-100 pt-1 border-t border-white/10">
-                  <span>{totalLessonsStudied} / 60 Lesson</span>
-                  <span>{totalTermsCompleted} / 6 Term Selesai</span>
+                  <span>{totalLessonsStudied} / 120 Lesson</span>
+                  <span>{totalReadyForTrial} / 12 Ready for Trial</span>
                 </div>
               </div>
             </div>
@@ -171,170 +180,69 @@ export default async function TraineeDashboardPage() {
           {/* Quick Stats Grid */}
           <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
             <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-              <span className="text-xs text-slate-400 block mb-1">Term Selesai</span>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
-                  {totalTermsCompleted}
-                </span>
-                <span className="text-xs text-slate-400">/ 6 Term</span>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-              <span className="text-xs text-slate-400 block mb-1">Lesson Tercentang</span>
+              <span className="text-xs text-slate-400 block mb-1">Total Progres</span>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
                   {totalLessonsStudied}
                 </span>
+                <span className="text-xs text-slate-400">/ 120 Lesson</span>
+              </div>
+              <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold mt-1 block">
+                {overallProgressPercent}% selesai
+              </span>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+              <span className="text-xs text-slate-400 block mb-1">Kinder Level</span>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
+                  {kinderLessonsStudied}
+                </span>
                 <span className="text-xs text-slate-400">/ 60 Lesson</span>
               </div>
+              <span className="text-[11px] text-slate-500 font-medium mt-1 block">
+                {Math.round((kinderLessonsStudied / 60) * 100)}% selesai
+              </span>
             </div>
 
             <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-              <span className="text-xs text-slate-400 block mb-1">Status Mengajar</span>
+              <span className="text-xs text-slate-400 block mb-1">Junior Level</span>
               <div className="flex items-baseline gap-1.5">
-                <span className="text-xl sm:text-2xl font-bold text-amber-600 dark:text-amber-400">
-                  {totalClearedToTeach}
+                <span className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
+                  {juniorLessonsStudied}
                 </span>
-                <span className="text-xs text-slate-400">Term Layak</span>
+                <span className="text-xs text-slate-400">/ 60 Lesson</span>
               </div>
+              <span className="text-[11px] text-slate-500 font-medium mt-1 block">
+                {Math.round((juniorLessonsStudied / 60) * 100)}% selesai
+              </span>
             </div>
 
             <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-              <span className="text-xs text-slate-400 block mb-1">Level Program</span>
+              <span className="text-xs text-slate-400 block mb-1">Ready for Trial</span>
               <div className="flex items-baseline gap-1.5">
-                <span className="text-base sm:text-lg font-bold text-indigo-600 dark:text-indigo-400 capitalize">
-                  {traineeLevel}
+                <span className="text-xl sm:text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                  {totalReadyForTrial}
                 </span>
+                <span className="text-xs text-slate-400">/ 12 Term</span>
               </div>
+              {totalClearedToTeach > 0 ? (
+                <span className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold mt-1 block">
+                  {totalClearedToTeach} Layak Mengajar
+                </span>
+              ) : (
+                <span className="text-[11px] text-slate-400 mt-1 block">
+                  0 Layak Mengajar
+                </span>
+              )}
             </div>
           </section>
 
-          {/* 6 Terms Sequential Grid */}
-          <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">
-                  Alur Pelatihan (6 Term)
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Selesaikan setiap term secara bertahap. Term berikutnya akan terbuka setelah term aktif disetujui.
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {termsWithProgress.map((term) => {
-                const isUnlocked = term.isUnlocked
-                const status = term.status
-                const statusStyle = status ? STATUS_STYLES[status] : null
-                const progressPercent = Math.round((term.studiedLessonsCount / 10) * 100)
-                const isCompleted = status === 'ready_for_trial'
-
-                return (
-                  <div
-                    key={term.id}
-                    className={`rounded-2xl border transition-all flex flex-col justify-between p-5 relative overflow-hidden ${
-                      isUnlocked
-                        ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-700'
-                        : 'bg-slate-100/70 dark:bg-slate-900/40 border-slate-200/60 dark:border-slate-800/60 opacity-60'
-                    }`}
-                  >
-                    <div>
-                      {/* Top Badges */}
-                      <div className="flex items-center justify-between gap-2 mb-3">
-                        <span className="text-xs font-bold text-slate-400 font-mono">
-                          TERM 0{term.sortOrder}
-                        </span>
-
-                        {isUnlocked && status && statusStyle ? (
-                          <span
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border}`}
-                          >
-                            <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
-                            <span>{STATUS_LABELS[status]}</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                            <Lock className="w-3 h-3" />
-                            <span>Terkunci</span>
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Term Title */}
-                      <h3 className="font-bold text-base text-slate-900 dark:text-white">
-                        {term.name}
-                      </h3>
-
-                      {/* Cleared to teach badge */}
-                      {term.clearedToTeach && (
-                        <div className="mt-2">
-                          <span
-                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${GOLD_BADGE_STYLE.bg}`}
-                          >
-                            <Award className="w-3 h-3 text-amber-500" />
-                            <span>Layak Mengajar</span>
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Progress description */}
-                      <div className="mt-4 space-y-1.5">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-slate-500 dark:text-slate-400 font-medium">
-                            {isUnlocked
-                              ? `${term.studiedLessonsCount} dari 10 Lesson`
-                              : 'Belum Terbuka'}
-                          </span>
-                          {isUnlocked && (
-                            <span className="font-semibold text-slate-700 dark:text-slate-300">
-                              {progressPercent}%
-                            </span>
-                          )}
-                        </div>
-
-                        {isUnlocked ? (
-                          <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all duration-300 ${
-                                isCompleted ? 'bg-emerald-500' : 'bg-indigo-600'
-                              }`}
-                              style={{ width: `${progressPercent}%` }}
-                            />
-                          </div>
-                        ) : (
-                          <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full" />
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Action Button */}
-                    <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800">
-                      {isUnlocked ? (
-                        <Link
-                          href={`/term/${term.id}`}
-                          className={`w-full py-2.5 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
-                            isCompleted
-                              ? 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
-                              : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs hover:shadow-indigo-500/20'
-                          }`}
-                        >
-                          <span>{isCompleted ? 'Lihat Ceklis Lesson' : 'Buka Ceklis Lesson'}</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </Link>
-                      ) : (
-                        <div className="w-full py-2.5 px-4 rounded-xl text-xs font-semibold text-slate-400 bg-slate-100 dark:bg-slate-800/50 flex items-center justify-center gap-1.5 cursor-not-allowed">
-                          <Lock className="w-3.5 h-3.5" />
-                          <span>Terkunci</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </section>
+          {/* Kinder and Junior Sections with Tabs */}
+          <DashboardTabsClient
+            kinderTerms={kinderTermsWithProgress}
+            juniorTerms={juniorTermsWithProgress}
+          />
         </main>
       </div>
     )

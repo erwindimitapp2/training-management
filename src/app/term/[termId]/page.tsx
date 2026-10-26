@@ -58,10 +58,7 @@ export default async function TraineeTermPage({ params }: PageProps) {
       redirect('/dashboard')
     }
 
-    // Verify term matches trainee's level
-    if (termData.level !== profile.level) {
-      redirect('/dashboard')
-    }
+
 
     // 3. Verify trainee has unlocked this term
     const { data: traineeTermData, error: ttError } = await supabase

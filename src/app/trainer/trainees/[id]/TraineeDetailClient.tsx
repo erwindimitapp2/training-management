@@ -147,6 +147,25 @@ export function TraineeDetailClient({ trainee, branches, terms }: TraineeDetailC
       null
   )
 
+  // Level tab state ('kinder' | 'junior')
+  const [levelTab, setLevelTab] = useState<'kinder' | 'junior'>(() => {
+    const attentionTerm = terms.find(
+      (t) =>
+        t.traineeTerm?.status === 'ready_for_check' ||
+        t.traineeTerm?.status === 'understanding_check'
+    )
+    if (attentionTerm && attentionTerm.level === 'junior') {
+      const hasKinderAttention = terms.some(
+        (t) =>
+          t.level === 'kinder' &&
+          (t.traineeTerm?.status === 'ready_for_check' ||
+            t.traineeTerm?.status === 'understanding_check')
+      )
+      if (!hasKinderAttention) return 'junior'
+    }
+    return 'kinder'
+  })
+
   const handleStatusAction = () => {
     if (!activeStatusModal) return
 
@@ -313,6 +332,41 @@ export function TraineeDetailClient({ trainee, branches, terms }: TraineeDetailC
     (t) => t.traineeTerm?.status === 'ready_for_trial'
   ).length
 
+  const kinderTerms = terms
+    .filter((t) => t.level === 'kinder')
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+  const juniorTerms = terms
+    .filter((t) => t.level === 'junior')
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+
+  const kinderStudied = kinderTerms.reduce(
+    (sum, t) => sum + t.lessons.filter((l) => l.studied).length,
+    0
+  )
+  const juniorStudied = juniorTerms.reduce(
+    (sum, t) => sum + t.lessons.filter((l) => l.studied).length,
+    0
+  )
+
+  const kinderReadyForTrial = kinderTerms.filter(
+    (t) => t.traineeTerm?.status === 'ready_for_trial'
+  ).length
+  const juniorReadyForTrial = juniorTerms.filter(
+    (t) => t.traineeTerm?.status === 'ready_for_trial'
+  ).length
+
+  const kinderCleared = kinderTerms.filter((t) => t.traineeTerm?.clearedToTeach).length
+  const juniorCleared = juniorTerms.filter((t) => t.traineeTerm?.clearedToTeach).length
+
+  const kinderNeedCheck = kinderTerms.filter(
+    (t) => t.traineeTerm?.status === 'ready_for_check'
+  ).length
+  const juniorNeedCheck = juniorTerms.filter(
+    (t) => t.traineeTerm?.status === 'ready_for_check'
+  ).length
+
+  const activeLevelTerms = levelTab === 'kinder' ? kinderTerms : juniorTerms
+
   return (
     <div className="space-y-6">
       {/* Back button */}
@@ -373,7 +427,7 @@ export function TraineeDetailClient({ trainee, branches, terms }: TraineeDetailC
                 @{trainee.username}
               </span>
               <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold uppercase bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
-                {trainee.level} Level
+                Kinder &amp; Junior
               </span>
               {isActive ? (
                 <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800">
@@ -523,53 +577,92 @@ export function TraineeDetailClient({ trainee, branches, terms }: TraineeDetailC
         </div>
       </div>
 
-      {/* 6 Terms List */}
+      {/* Level Tabs: Kinder & Junior */}
       <div className="space-y-4">
-        <h2 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight flex items-center justify-between">
-          <span>Progres &amp; Ceklis Lesson per Term</span>
-          <span className="text-xs font-normal text-slate-400">
-            Klik kartu untuk melihat detail ceklis
-          </span>
-        </h2>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700/60">
+            <button
+              type="button"
+              onClick={() => setLevelTab('kinder')}
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 ${
+                levelTab === 'kinder'
+                  ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <span>Kinder Level (6 Term)</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 font-mono">
+                {kinderStudied}/60
+              </span>
+              {kinderNeedCheck > 0 && (
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Ada term Ready for Check" />
+              )}
+            </button>
 
-        {terms.map((term) => {
-          const isUnlocked = term.traineeTerm !== null
+            <button
+              type="button"
+              onClick={() => setLevelTab('junior')}
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 ${
+                levelTab === 'junior'
+                  ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <span>Junior Level (6 Term)</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 font-mono">
+                {juniorStudied}/60
+              </span>
+              {juniorNeedCheck > 0 && (
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Ada term Ready for Check" />
+              )}
+            </button>
+          </div>
+
+          <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-3">
+            <span>
+              Ready for Trial:{' '}
+              <strong className="text-emerald-600 dark:text-emerald-400">
+                {levelTab === 'kinder' ? kinderReadyForTrial : juniorReadyForTrial}/6 Term
+              </strong>
+            </span>
+            <span>•</span>
+            <span>
+              Layak Mengajar:{' '}
+              <strong className="text-amber-600 dark:text-amber-400">
+                {levelTab === 'kinder' ? kinderCleared : juniorCleared}/6 Term
+              </strong>
+            </span>
+          </div>
+        </div>
+
+        {/* 6 Terms List for Selected Tab */}
+        {activeLevelTerms.map((term) => {
           const isExpanded = expandedTermId === term.termId
-          const status = term.traineeTerm?.status
-          const statusStyle = status ? STATUS_STYLES[status] : null
+          const status = term.traineeTerm?.status || 'in_self_training'
+          const statusStyle = STATUS_STYLES[status]
           const studiedCount = term.lessons.filter((l) => l.studied).length
           const clearedToTeach = term.traineeTerm?.clearedToTeach
 
           return (
             <div
               key={term.termId}
-              className={`bg-white dark:bg-slate-900 rounded-2xl border transition-all ${
-                isUnlocked
-                  ? 'border-slate-200 dark:border-slate-800 shadow-xs'
-                  : 'border-slate-200/60 dark:border-slate-800/60 bg-slate-50/60 dark:bg-slate-900/40 opacity-70'
-              }`}
+              className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs transition-all"
             >
               {/* Term Header Bar (Clickable) */}
               <div
-                onClick={() => isUnlocked && setExpandedTermId(isExpanded ? null : term.termId)}
-                className={`p-4 sm:p-5 flex items-center justify-between gap-3 ${
-                  isUnlocked ? 'cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-800/30' : ''
-                }`}
+                onClick={() => setExpandedTermId(isExpanded ? null : term.termId)}
+                className="p-4 sm:p-5 flex items-center justify-between gap-3 cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-800/30"
               >
                 <div className="flex items-center gap-3">
                   {/* Status Indicator Icon */}
                   <div
                     className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${
-                      !isUnlocked
-                        ? 'bg-slate-100 dark:bg-slate-800 text-slate-400'
-                        : status === 'ready_for_trial'
+                      status === 'ready_for_trial'
                         ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400'
                         : 'bg-indigo-100 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400'
                     }`}
                   >
-                    {!isUnlocked ? (
-                      <Lock className="w-4 h-4" />
-                    ) : status === 'ready_for_trial' ? (
+                    {status === 'ready_for_trial' ? (
                       <CheckCircle2 className="w-5 h-5" />
                     ) : (
                       <span>{term.sortOrder}</span>
@@ -579,21 +672,16 @@ export function TraineeDetailClient({ trainee, branches, terms }: TraineeDetailC
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white">
-                        {term.name}
+                        <span className="capitalize">{term.level}</span> · {term.name}
                       </h3>
 
                       {/* Status badge */}
-                      {status && statusStyle ? (
+                      {statusStyle && (
                         <span
                           className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border}`}
                         >
                           <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
                           <span>{STATUS_LABELS[status]}</span>
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-500 dark:bg-slate-800">
-                          <Lock className="w-3 h-3" />
-                          <span>Terkunci</span>
                         </span>
                       )}
 
@@ -625,32 +713,26 @@ export function TraineeDetailClient({ trainee, branches, terms }: TraineeDetailC
                     </div>
 
                     <p className="text-xs text-slate-400 mt-0.5">
-                      {isUnlocked
-                        ? `${studiedCount} dari 10 lesson tercentang`
-                        : 'Akan terbuka otomatis setelah term sebelumnya selesai'}
+                      {studiedCount} dari 10 lesson tercentang
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3">
-                  {isUnlocked && (
-                    <div className="hidden sm:block text-right">
-                      <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        {studiedCount}/10
-                      </span>
-                    </div>
-                  )}
+                  <div className="hidden sm:block text-right">
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      {studiedCount}/10
+                    </span>
+                  </div>
 
-                  {isUnlocked && (
-                    <div className="text-slate-400">
-                      {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                    </div>
-                  )}
+                  <div className="text-slate-400">
+                    {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                  </div>
                 </div>
               </div>
 
               {/* Expanded content: Lessons & History */}
-              {isUnlocked && isExpanded && (
+              {isExpanded && (
                 <div className="px-4 pb-5 sm:px-5 pt-3 border-t border-slate-100 dark:border-slate-800 space-y-5 animate-in fade-in duration-150">
                   {/* TRAINER VERIFICATION PANEL */}
                   {status === 'ready_for_check' && (

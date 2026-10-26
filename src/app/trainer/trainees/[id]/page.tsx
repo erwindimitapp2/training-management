@@ -61,11 +61,10 @@ export default async function TraineeDetailPage({ params }: PageProps) {
       (traineeData.branches as unknown as { name: string } | null)?.name || 'Tanpa cabang'
     const traineeLevel = (traineeData.level || 'kinder') as ProgramLevel
 
-    // 3. Fetch master terms for the trainee's level (6 terms)
+    // 3. Fetch master terms for all levels (Kinder & Junior, 12 terms)
     const { data: masterTerms, error: termsError } = await supabase
       .from('terms')
       .select('id, level, name, sort_order')
-      .eq('level', traineeLevel)
       .order('sort_order', { ascending: true })
 
     const termsList = masterTerms || []

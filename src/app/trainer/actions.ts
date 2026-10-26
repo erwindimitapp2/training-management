@@ -59,7 +59,6 @@ export async function registerTraineeAction(
     const name = formData.get('name')?.toString().trim()
     const rawUsername = formData.get('username')?.toString().trim()
     const password = formData.get('password')?.toString()
-    const level = formData.get('level')?.toString().trim() as ProgramLevel
     const rawBranchId = formData.get('branchId')?.toString()
     const branchId = rawBranchId ? parseInt(rawBranchId, 10) : NaN
 
@@ -87,10 +86,6 @@ export async function registerTraineeAction(
 
     if (!password || password.length < 8) {
       return { error: 'Kata sandi minimal 8 karakter.' }
-    }
-
-    if (level !== 'kinder' && level !== 'junior') {
-      return { error: 'Level program harus Kinder atau Junior.' }
     }
 
     const adminClient = createAdminClient()
@@ -141,7 +136,7 @@ export async function registerTraineeAction(
 
     const authUserId = authCreated.user.id
 
-    // Insert into public.users
+    // Insert into public.users (level is null because trainee has access to all terms/levels)
     const { error: insertUserError } = await adminClient.from('users').insert({
       id: authUserId,
       name,
@@ -149,7 +144,7 @@ export async function registerTraineeAction(
       email,
       role: 'trainee',
       branch_id: branchId,
-      level,
+      level: null,
       is_active: true,
     })
 
@@ -401,7 +396,7 @@ export async function changeTermStatusAction(
     } else if (action === 'need_review') {
       msg = 'Catatan Need Review berhasil dikirim. Term dikembalikan ke In Self-Training.'
     } else if (action === 'ready_for_trial') {
-      msg = 'Term disetujui Ready for Trial Class! Term berikutnya telah otomatis dibuka.'
+      msg = 'Term disetujui Ready for Trial Class!'
     }
 
     return {

@@ -3,7 +3,7 @@
 import { useState, useTransition, useOptimistic } from 'react'
 import Link from 'next/link'
 import { toggleLessonAction, submitReadyForCheckAction } from '@/app/trainee/actions'
-import { TermStatus } from '@/types/database'
+import { TermStatus, ObservationResult } from '@/types/database'
 import { STATUS_LABELS, STATUS_STYLES, GOLD_BADGE_STYLE } from '@/lib/constants'
 import {
   ArrowLeft,
@@ -19,6 +19,8 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
+  Star,
+  GraduationCap,
 } from 'lucide-react'
 
 export interface LessonItem {
@@ -38,6 +40,19 @@ export interface StatusHistoryItem {
   changedByName: string
 }
 
+export interface ObservationItem {
+  id: number
+  sessionDate: string
+  scorePreparation: number
+  scoreDelivery: number
+  scoreMastery: number
+  scoreVisual: number
+  scoreEngagement: number
+  result: ObservationResult
+  notes: string | null
+  trainerName: string
+}
+
 interface TermChecklistClientProps {
   term: {
     id: number
@@ -54,6 +69,7 @@ interface TermChecklistClientProps {
   }
   initialLessons: LessonItem[]
   history: StatusHistoryItem[]
+  observations?: ObservationItem[]
 }
 
 export function TermChecklistClient({
@@ -61,6 +77,7 @@ export function TermChecklistClient({
   traineeTerm,
   initialLessons,
   history,
+  observations = [],
 }: TermChecklistClientProps) {
   const [lessons, setLessons] = useState<LessonItem[]>(initialLessons)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -222,6 +239,28 @@ export function TermChecklistClient({
                   Silakan pelajari kembali lesson yang perlu ditinjau, kemudian ajukan Ready for Check kembali setelah siap.
                 </p>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Cleared to Teach Celebratory Banner */}
+        {traineeTerm.clearedToTeach && (
+          <div className="mt-5 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-400/10 to-yellow-500/15 border border-amber-300 dark:border-amber-600/50 shadow-xs flex items-start sm:items-center gap-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+              <Award className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="font-bold text-sm text-amber-950 dark:text-amber-200">
+                  Predikat Layak Mengajar (Cleared to Teach)
+                </h4>
+                <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-amber-500 text-white">
+                  Lulus Observasi
+                </span>
+              </div>
+              <p className="text-xs text-amber-800/90 dark:text-amber-300/80 mt-0.5">
+                Selamat! Anda telah lulus sesi observasi sebagai Main Teacher di kelas dan resmi diizinkan mengajar materi <strong>{term.name}</strong>.
+              </p>
             </div>
           </div>
         )}
@@ -393,6 +432,100 @@ export function TermChecklistClient({
                 </span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Observation Sessions Results for this term */}
+      {observations && observations.length > 0 && (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-2">
+              <Award className="w-4 h-4 text-amber-500" />
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                Hasil Sesi Observasi Mengajar (Main Teacher)
+              </h3>
+            </div>
+            <span className="text-xs text-slate-400 font-medium">
+              {observations.length} Sesi Terdata
+            </span>
+          </div>
+
+          <div className="space-y-3 pt-1">
+            {observations.map((obs) => {
+              const avg = (
+                (obs.scorePreparation +
+                  obs.scoreDelivery +
+                  obs.scoreMastery +
+                  obs.scoreVisual +
+                  obs.scoreEngagement) /
+                5
+              ).toFixed(1)
+
+              return (
+                <div
+                  key={obs.id}
+                  className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 text-xs border border-slate-200/70 dark:border-slate-700/70 space-y-2.5"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full font-bold uppercase text-[10px] tracking-wide border ${
+                          obs.result === 'pass'
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700'
+                            : 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-700'
+                        }`}
+                      >
+                        {obs.result === 'pass' ? 'Lulus (Pass) — Layak Mengajar' : 'Ulang (Retry)'}
+                      </span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        Tanggal: {obs.sessionDate}
+                      </span>
+                      <span className="text-[11px] text-slate-400">
+                        Penilai: {obs.trainerName}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-bold text-xs bg-amber-50 dark:bg-amber-950/40 px-2.5 py-0.5 rounded-full border border-amber-200 dark:border-amber-800/60 self-start sm:self-auto">
+                      <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                      <span>Rata-rata: {avg} / 5.0</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[11px] p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-300">
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Persiapan:</span>
+                      <span className="font-bold text-xs">{obs.scorePreparation} / 5</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Penyampaian:</span>
+                      <span className="font-bold text-xs">{obs.scoreDelivery} / 5</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Penguasaan:</span>
+                      <span className="font-bold text-xs">{obs.scoreMastery} / 5</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Visual &amp; Media:</span>
+                      <span className="font-bold text-xs">{obs.scoreVisual} / 5</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Interaksi:</span>
+                      <span className="font-bold text-xs">{obs.scoreEngagement} / 5</span>
+                    </div>
+                  </div>
+
+                  {obs.notes && (
+                    <div className="p-2.5 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 text-slate-600 dark:text-slate-300 text-xs">
+                      <span className="font-semibold text-amber-900 dark:text-amber-200 block text-[10px] uppercase tracking-wider mb-0.5">
+                        Catatan &amp; Feedback Trainer:
+                      </span>
+                      <p className="italic">&ldquo;{obs.notes}&rdquo;</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

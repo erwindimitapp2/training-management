@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Navbar } from '@/components/Navbar'
 import { TermChecklistClient } from './TermChecklistClient'
-import { TermStatus } from '@/types/database'
+import { TermStatus, ObservationResult } from '@/types/database'
 
 export const dynamic = 'force-dynamic'
 
@@ -133,6 +133,27 @@ export default async function TraineeTermPage({ params }: PageProps) {
       changedByName: (h.users as unknown as { name: string } | null)?.name || 'Trainer',
     }))
 
+    // 7. Fetch observation_sessions for this trainee and term
+    const { data: obsData } = await supabase
+      .from('observation_sessions')
+      .select('id, session_date, score_preparation, score_delivery, score_mastery, score_visual, score_engagement, result, notes, users!trainer_id(name)')
+      .eq('trainee_id', user.id)
+      .eq('term_id', termIdNum)
+      .order('session_date', { ascending: false })
+
+    const observations = (obsData || []).map((o) => ({
+      id: o.id,
+      sessionDate: o.session_date,
+      scorePreparation: o.score_preparation,
+      scoreDelivery: o.score_delivery,
+      scoreMastery: o.score_mastery,
+      scoreVisual: o.score_visual,
+      scoreEngagement: o.score_engagement,
+      result: o.result as ObservationResult,
+      notes: o.notes,
+      trainerName: (o.users as unknown as { name: string } | null)?.name || 'Trainer',
+    }))
+
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
         <Navbar
@@ -162,6 +183,7 @@ export default async function TraineeTermPage({ params }: PageProps) {
             }}
             initialLessons={initialLessons}
             history={history}
+            observations={observations}
           />
         </main>
       </div>

@@ -7,6 +7,7 @@ import {
   setTraineeActiveAction,
   changeTermStatusAction,
   TermStatusAction,
+  recordObservationAction,
 } from '@/app/trainer/actions'
 import { ProgramLevel, TermStatus, ObservationResult } from '@/types/database'
 import { STATUS_LABELS, STATUS_STYLES, GOLD_BADGE_STYLE } from '@/lib/constants'
@@ -34,6 +35,8 @@ import {
   Sparkles,
   MessageSquare,
   AlertCircle,
+  GraduationCap,
+  Star,
 } from 'lucide-react'
 
 export interface TermDetail {
@@ -154,6 +157,65 @@ export function TraineeDetailClient({ trainee, terms }: TraineeDetailClientProps
         setActiveStatusModal(null)
         setStatusNote('')
         setTimeout(() => setActionSuccess(null), 3500)
+      }
+    })
+  }
+
+  // Observation scoring modal state
+  const [observationModal, setObservationModal] = useState<{
+    termId: number
+    termName: string
+    sortOrder: number
+  } | null>(null)
+  const [sessionDate, setSessionDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [scorePreparation, setScorePreparation] = useState(5)
+  const [scoreDelivery, setScoreDelivery] = useState(5)
+  const [scoreMastery, setScoreMastery] = useState(5)
+  const [scoreVisual, setScoreVisual] = useState(5)
+  const [scoreEngagement, setScoreEngagement] = useState(5)
+  const [obsResult, setObsResult] = useState<'pass' | 'retry'>('pass')
+  const [obsNotes, setObsNotes] = useState('')
+  const [isSubmittingObs, startObsTransition] = useTransition()
+
+  const handleOpenObservationModal = (termId: number, termName: string, sortOrder: number) => {
+    setObservationModal({ termId, termName, sortOrder })
+    setSessionDate(new Date().toISOString().split('T')[0])
+    setScorePreparation(5)
+    setScoreDelivery(5)
+    setScoreMastery(5)
+    setScoreVisual(5)
+    setScoreEngagement(5)
+    setObsResult('pass')
+    setObsNotes('')
+    setActionError(null)
+  }
+
+  const handleSubmitObservation = () => {
+    if (!observationModal) return
+
+    setActionError(null)
+    setActionSuccess(null)
+
+    startObsTransition(async () => {
+      const res = await recordObservationAction({
+        traineeId: trainee.id,
+        termId: observationModal.termId,
+        sessionDate,
+        scorePreparation,
+        scoreDelivery,
+        scoreMastery,
+        scoreVisual,
+        scoreEngagement,
+        result: obsResult,
+        notes: obsNotes,
+      })
+
+      if (res.error) {
+        setActionError(res.error)
+      } else {
+        setActionSuccess(res.message || 'Hasil observasi berhasil disimpan.')
+        setObservationModal(null)
+        setTimeout(() => setActionSuccess(null), 4000)
       }
     })
   }
@@ -600,23 +662,56 @@ export function TraineeDetailClient({ trainee, terms }: TraineeDetailClientProps
                   )}
 
                   {status === 'ready_for_trial' && (
-                    <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-800 dark:text-emerald-300 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                        <span>
-                          Term telah selesai disetujui (<strong>Ready for Trial Class</strong>). Trainee siap untuk tahap observasi mengajar.
-                        </span>
+                    <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-emerald-400/5 to-teal-500/10 border border-emerald-300 dark:border-emerald-700/60 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex items-start gap-3">
+                          <div
+                            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${
+                              clearedToTeach ? 'bg-amber-500 text-white' : 'bg-emerald-600 text-white'
+                            }`}
+                          >
+                            {clearedToTeach ? (
+                              <Award className="w-5 h-5" />
+                            ) : (
+                              <GraduationCap className="w-5 h-5" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="font-bold text-sm text-slate-900 dark:text-white">
+                                {clearedToTeach
+                                  ? 'Telah Layak Mengajar (Cleared to Teach)'
+                                  : 'Term Selesai: Siap Observasi Mengajar (Trial Class)'}
+                              </h4>
+                              {clearedToTeach && (
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${GOLD_BADGE_STYLE.bg}`}
+                                >
+                                  <Award className="w-3 h-3 text-amber-500" />
+                                  <span>Layak Mengajar</span>
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                              {clearedToTeach
+                                ? 'Trainee telah lulus sesi observasi sebagai Main Teacher dan memegang predikat Layak Mengajar untuk term ini.'
+                                : 'Trainee telah menyelesaikan materi mandiri & understanding check. Lakukan sesi observasi saat trainee menjadi Main Teacher di kelas.'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          id={`btn-open-observation-term-${term.termId}`}
+                          type="button"
+                          onClick={() =>
+                            handleOpenObservationModal(term.termId, term.name, term.sortOrder)
+                          }
+                          className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold tracking-wide shadow-md hover:shadow-amber-500/25 transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+                        >
+                          <Award className="w-4 h-4" />
+                          <span>{clearedToTeach ? 'Input Observasi Baru' : 'Input Sesi Observasi'}</span>
+                        </button>
                       </div>
-                      {term.traineeTerm?.completedAt && (
-                        <span className="text-[11px] font-mono text-emerald-700 dark:text-emerald-400 shrink-0">
-                          Selesai:{' '}
-                          {new Date(term.traineeTerm.completedAt).toLocaleDateString('id-ID', {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                        </span>
-                      )}
                     </div>
                   )}
 
@@ -710,49 +805,145 @@ export function TraineeDetailClient({ trainee, terms }: TraineeDetailClientProps
                     </div>
                   )}
 
-                  {/* Observation Sessions for this term (if any) */}
-                  {term.observations.length > 0 && (
-                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
-                      <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
-                        Hasil Sesi Observasi Mengajar
-                      </h4>
-                      <div className="space-y-2">
-                        {term.observations.map((obs) => (
-                          <div
-                            key={obs.id}
-                            className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 text-xs border border-slate-100 dark:border-slate-800"
+                  {/* Observation Sessions for this term */}
+                  {(term.observations.length > 0 || status === 'ready_for_trial') && (
+                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            Hasil Sesi Observasi Mengajar
+                          </h4>
+                          <p className="text-[11px] text-slate-400">
+                            Evaluasi 5 kriteria saat trainee menjadi Main Teacher di kelas.
+                          </p>
+                        </div>
+
+                        {status === 'ready_for_trial' && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleOpenObservationModal(term.termId, term.name, term.sortOrder)
+                            }
+                            className="px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 hover:bg-amber-100 text-amber-800 dark:text-amber-300 text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
                           >
-                            <div className="flex items-center justify-between mb-1.5">
-                              <span className="font-semibold text-slate-800 dark:text-slate-200">
-                                Tanggal: {obs.sessionDate}
-                              </span>
-                              <span
-                                className={`px-2 py-0.5 rounded-full font-bold uppercase text-[10px] ${
-                                  obs.result === 'pass'
-                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                                    : 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
-                                }`}
-                              >
-                                {obs.result === 'pass' ? 'Lulus (Pass)' : 'Ulang (Retry)'}
-                              </span>
-                            </div>
-
-                            <div className="grid grid-cols-5 gap-1.5 text-[11px] text-slate-600 dark:text-slate-400 py-1 border-t border-b border-slate-200/50 dark:border-slate-700/50 my-1.5">
-                              <span>Prep: {obs.scorePreparation}/5</span>
-                              <span>Deliv: {obs.scoreDelivery}/5</span>
-                              <span>Mstr: {obs.scoreMastery}/5</span>
-                              <span>Vis: {obs.scoreVisual}/5</span>
-                              <span>Engage: {obs.scoreEngagement}/5</span>
-                            </div>
-
-                            {obs.notes && (
-                              <p className="text-[11px] text-slate-500 italic mt-1">
-                                Catatan: &ldquo;{obs.notes}&rdquo;
-                              </p>
-                            )}
-                          </div>
-                        ))}
+                            <Award className="w-3.5 h-3.5 text-amber-500" />
+                            <span>+ Input Observasi</span>
+                          </button>
+                        )}
                       </div>
+
+                      {term.observations.length === 0 ? (
+                        <div className="p-4 rounded-xl bg-slate-50/70 dark:bg-slate-800/30 border border-dashed border-slate-200 dark:border-slate-700 text-center space-y-2">
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            Belum ada sesi observasi yang diinput untuk term ini.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleOpenObservationModal(term.termId, term.name, term.sortOrder)
+                            }
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-all shadow-xs"
+                          >
+                            <Award className="w-3.5 h-3.5" />
+                            <span>Mulai Penilaian Observasi</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {term.observations.map((obs) => {
+                            const avgScore = (
+                              (obs.scorePreparation +
+                                obs.scoreDelivery +
+                                obs.scoreMastery +
+                                obs.scoreVisual +
+                                obs.scoreEngagement) /
+                              5
+                            ).toFixed(1)
+
+                            return (
+                              <div
+                                key={obs.id}
+                                className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 text-xs border border-slate-200/80 dark:border-slate-700/80 space-y-2.5"
+                              >
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span
+                                      className={`px-2.5 py-0.5 rounded-full font-bold uppercase text-[10px] tracking-wide border ${
+                                        obs.result === 'pass'
+                                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700'
+                                          : 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-700'
+                                      }`}
+                                    >
+                                      {obs.result === 'pass'
+                                        ? 'Lulus (Pass) — Layak Mengajar'
+                                        : 'Ulang (Retry)'}
+                                    </span>
+                                    <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                      Tanggal: {obs.sessionDate}
+                                    </span>
+                                    <span className="text-[11px] text-slate-400">
+                                      oleh {obs.trainerName}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-bold text-xs bg-amber-50 dark:bg-amber-950/40 px-2.5 py-0.5 rounded-full border border-amber-200 dark:border-amber-800/60 self-start sm:self-auto">
+                                    <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                                    <span>Rata-rata: {avgScore} / 5.0</span>
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[11px] p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-300">
+                                  <div>
+                                    <span className="text-slate-400 block text-[10px]">
+                                      Persiapan:
+                                    </span>
+                                    <span className="font-bold text-xs">
+                                      {obs.scorePreparation} / 5
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-400 block text-[10px]">
+                                      Penyampaian:
+                                    </span>
+                                    <span className="font-bold text-xs">
+                                      {obs.scoreDelivery} / 5
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-400 block text-[10px]">
+                                      Penguasaan:
+                                    </span>
+                                    <span className="font-bold text-xs">{obs.scoreMastery} / 5</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-400 block text-[10px]">
+                                      Visual &amp; Media:
+                                    </span>
+                                    <span className="font-bold text-xs">{obs.scoreVisual} / 5</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-400 block text-[10px]">
+                                      Interaksi:
+                                    </span>
+                                    <span className="font-bold text-xs">
+                                      {obs.scoreEngagement} / 5
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {obs.notes && (
+                                  <div className="p-2.5 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 text-slate-600 dark:text-slate-300 text-xs">
+                                    <span className="font-semibold text-amber-900 dark:text-amber-200 block text-[10px] uppercase tracking-wider mb-0.5">
+                                      Catatan Trainer:
+                                    </span>
+                                    <p className="italic">&ldquo;{obs.notes}&rdquo;</p>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1028,6 +1219,365 @@ export function TraineeDetailClient({ trainee, terms }: TraineeDetailClientProps
                       ? 'Kirim Need Review'
                       : 'Konfirmasi Ready for Trial'}
                   </span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* OBSERVATION SCORING MODAL */}
+      {observationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-xl w-full p-6 sm:p-7 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-5 my-8">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center">
+                  <Award className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                    Form Observasi Mengajar (Main Teacher)
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    {observationModal.termName} • Trainee: @{trainee.username} ({trainee.name})
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setObservationModal(null)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Error in modal */}
+            {actionError && (
+              <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2 border border-rose-200 dark:border-rose-800">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{actionError}</span>
+              </div>
+            )}
+
+            {/* Session Date */}
+            <div>
+              <label
+                htmlFor="obs-session-date"
+                className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5"
+              >
+                Tanggal Observasi Kelas <span className="text-rose-500">*</span>
+              </label>
+              <input
+                id="obs-session-date"
+                type="date"
+                value={sessionDate}
+                onChange={(e) => setSessionDate(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+              />
+            </div>
+
+            {/* 5 Assessment Criteria */}
+            <div className="space-y-4 pt-1">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                  Penilaian 5 Kriteria (Skala 1 - 5)
+                </h4>
+                <div className="px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 text-xs font-bold flex items-center gap-1">
+                  <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                  <span>
+                    Rata-rata:{' '}
+                    {(
+                      (scorePreparation +
+                        scoreDelivery +
+                        scoreMastery +
+                        scoreVisual +
+                        scoreEngagement) /
+                      5
+                    ).toFixed(1)}{' '}
+                    / 5.0
+                  </span>
+                </div>
+              </div>
+
+              {/* Criterion 1: Preparation */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                      1. Persiapan Mengajar (Preparation)
+                    </span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Rencana pelaksanaan ajar, kesiapan alat, media &amp; modul materi.
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold text-amber-600 dark:text-amber-400 shrink-0">
+                    {scorePreparation} / 5
+                  </span>
+                </div>
+                <div className="grid grid-cols-5 gap-1.5 pt-1">
+                  {[1, 2, 3, 4, 5].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setScorePreparation(val)}
+                      className={`py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+                        scorePreparation === val
+                          ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
+                          : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-amber-300'
+                      }`}
+                    >
+                      {val}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Criterion 2: Delivery */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                      2. Cara Penyampaian (Delivery)
+                    </span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Intonasi vokal, kejelasan instruksi, manajemen waktu &amp; pacing materi.
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold text-amber-600 dark:text-amber-400 shrink-0">
+                    {scoreDelivery} / 5
+                  </span>
+                </div>
+                <div className="grid grid-cols-5 gap-1.5 pt-1">
+                  {[1, 2, 3, 4, 5].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setScoreDelivery(val)}
+                      className={`py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+                        scoreDelivery === val
+                          ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
+                          : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-amber-300'
+                      }`}
+                    >
+                      {val}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Criterion 3: Mastery */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                      3. Penguasaan Kelas &amp; Materi (Mastery)
+                    </span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Pemahaman materi mendalam, menjawab pertanyaan murid, handling situasi kelas.
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold text-amber-600 dark:text-amber-400 shrink-0">
+                    {scoreMastery} / 5
+                  </span>
+                </div>
+                <div className="grid grid-cols-5 gap-1.5 pt-1">
+                  {[1, 2, 3, 4, 5].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setScoreMastery(val)}
+                      className={`py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+                        scoreMastery === val
+                          ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
+                          : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-amber-300'
+                      }`}
+                    >
+                      {val}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Criterion 4: Visual */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                      4. Penggunaan Visual &amp; Media (Visual)
+                    </span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Pemanfaatan slide, alat peraga visual, papan tulis, kejelasan display.
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold text-amber-600 dark:text-amber-400 shrink-0">
+                    {scoreVisual} / 5
+                  </span>
+                </div>
+                <div className="grid grid-cols-5 gap-1.5 pt-1">
+                  {[1, 2, 3, 4, 5].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setScoreVisual(val)}
+                      className={`py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+                        scoreVisual === val
+                          ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
+                          : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-amber-300'
+                      }`}
+                    >
+                      {val}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Criterion 5: Engagement */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                      5. Interaksi &amp; Keterlibatan Murid (Engagement)
+                    </span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Interaksi dua arah, memotivasi siswa, perhatian merata &amp; energi positif.
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold text-amber-600 dark:text-amber-400 shrink-0">
+                    {scoreEngagement} / 5
+                  </span>
+                </div>
+                <div className="grid grid-cols-5 gap-1.5 pt-1">
+                  {[1, 2, 3, 4, 5].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setScoreEngagement(val)}
+                      className={`py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+                        scoreEngagement === val
+                          ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
+                          : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-amber-300'
+                      }`}
+                    >
+                      {val}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Decision: Result Selector (Pass vs Retry) */}
+            <div className="space-y-2 pt-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                Keputusan Hasil Observasi <span className="text-rose-500">*</span>
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Option 1: Pass */}
+                <div
+                  onClick={() => setObsResult('pass')}
+                  className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-3 ${
+                    obsResult === 'pass'
+                      ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/40 shadow-xs'
+                      : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300'
+                  }`}
+                >
+                  <div
+                    className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
+                      obsResult === 'pass'
+                        ? 'border-emerald-600 bg-emerald-600 text-white'
+                        : 'border-slate-300'
+                    }`}
+                  >
+                    {obsResult === 'pass' && <div className="w-2 h-2 rounded-full bg-white" />}
+                  </div>
+                  <div>
+                    <span className="font-bold text-xs sm:text-sm text-emerald-900 dark:text-emerald-200 block">
+                      Lulus (Pass) — Layak Mengajar
+                    </span>
+                    <span className="text-[11px] text-emerald-700 dark:text-emerald-400 leading-snug block mt-0.5">
+                      Trainee resmi dinyatakan <strong>Layak Mengajar</strong> (Gold Badge) untuk
+                      term ini.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Option 2: Retry */}
+                <div
+                  onClick={() => setObsResult('retry')}
+                  className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-3 ${
+                    obsResult === 'retry'
+                      ? 'border-rose-500 bg-rose-50/70 dark:bg-rose-950/40 shadow-xs'
+                      : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300'
+                  }`}
+                >
+                  <div
+                    className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
+                      obsResult === 'retry'
+                        ? 'border-rose-600 bg-rose-600 text-white'
+                        : 'border-slate-300'
+                    }`}
+                  >
+                    {obsResult === 'retry' && <div className="w-2 h-2 rounded-full bg-white" />}
+                  </div>
+                  <div>
+                    <span className="font-bold text-xs sm:text-sm text-rose-900 dark:text-rose-200 block">
+                      Ulang (Retry) — Observasi Ulang
+                    </span>
+                    <span className="text-[11px] text-rose-700 dark:text-rose-400 leading-snug block mt-0.5">
+                      Trainee perlu pendampingan dan evaluasi ulang pada sesi mengajar berikutnya.
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Notes Textarea */}
+            <div>
+              <label
+                htmlFor="obs-notes-textarea"
+                className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5"
+              >
+                Catatan Evaluasi &amp; Umpan Balik (Feedback)
+              </label>
+              <textarea
+                id="obs-notes-textarea"
+                rows={3}
+                value={obsNotes}
+                onChange={(e) => setObsNotes(e.target.value)}
+                placeholder="Tuliskan catatan kelebihan dan hal yang perlu ditingkatkan trainee saat mengajar..."
+                className="w-full p-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 resize-none"
+              />
+            </div>
+
+            {/* Modal Actions */}
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2.5">
+              <button
+                type="button"
+                disabled={isSubmittingObs}
+                onClick={() => setObservationModal(null)}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer disabled:cursor-not-allowed"
+              >
+                Batal
+              </button>
+
+              <button
+                id="btn-submit-observation"
+                type="button"
+                disabled={isSubmittingObs || !sessionDate}
+                onClick={handleSubmitObservation}
+                className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white text-xs font-bold shadow-md hover:shadow-amber-500/25 transition-all flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+              >
+                {isSubmittingObs ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Menyimpan Hasil...</span>
+                  </>
+                ) : (
+                  <span>Simpan Hasil Observasi</span>
                 )}
               </button>
             </div>

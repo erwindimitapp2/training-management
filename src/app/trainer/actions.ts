@@ -333,3 +333,118 @@ export async function changeTermStatusAction(
     return { error: errMessage }
   }
 }
+
+export type ObservationInput = {
+  traineeId: string
+  termId: number
+  sessionDate: string
+  scorePreparation: number
+  scoreDelivery: number
+  scoreMastery: number
+  scoreVisual: number
+  scoreEngagement: number
+  result: 'pass' | 'retry'
+  notes?: string
+}
+
+/**
+ * 5. recordObservationAction
+ * - Verifies active trainer and authorization
+ * - Validates scores 1-5 for the 5 observation criteria
+ * - Validates result ('pass' | 'retry') and date format
+ * - Calls record_observation RPC (which automatically marks cleared_to_teach = true when result is 'pass')
+ * - Revalidates trainer dashboard, trainee detail page, and trainee views
+ */
+export async function recordObservationAction(
+  input: ObservationInput
+): Promise<ActionResponse> {
+  try {
+    const trainer = await verifyActiveTrainer()
+
+    const {
+      traineeId,
+      termId,
+      sessionDate,
+      scorePreparation,
+      scoreDelivery,
+      scoreMastery,
+      scoreVisual,
+      scoreEngagement,
+      result,
+      notes,
+    } = input
+
+    if (!traineeId) {
+      return { error: 'ID Trainee tidak valid.' }
+    }
+
+    if (!termId || isNaN(termId)) {
+      return { error: 'ID Term tidak valid.' }
+    }
+
+    if (!sessionDate || !/^\d{4}-\d{2}-\d{2}$/.test(sessionDate)) {
+      return { error: 'Tanggal observasi harus dalam format YYYY-MM-DD.' }
+    }
+
+    const scores = [
+      { name: 'Persiapan Mengajar', val: scorePreparation },
+      { name: 'Penyampaian Materi', val: scoreDelivery },
+      { name: 'Penguasaan Materi', val: scoreMastery },
+      { name: 'Penggunaan Visual', val: scoreVisual },
+      { name: 'Interaksi & Engagement', val: scoreEngagement },
+    ]
+
+    for (const s of scores) {
+      if (
+        typeof s.val !== 'number' ||
+        isNaN(s.val) ||
+        s.val < 1 ||
+        s.val > 5 ||
+        !Number.isInteger(s.val)
+      ) {
+        return { error: `Skor ${s.name} harus berupa angka bulat antara 1 hingga 5.` }
+      }
+    }
+
+    if (result !== 'pass' && result !== 'retry') {
+      return { error: 'Hasil observasi harus Lulus (pass) atau Ulang (retry).' }
+    }
+
+    const supabase = await createClient()
+
+    const { error } = await supabase.rpc('record_observation', {
+      p_trainee_id: traineeId,
+      p_term_id: termId,
+      p_session_date: sessionDate,
+      p_preparation: scorePreparation,
+      p_delivery: scoreDelivery,
+      p_mastery: scoreMastery,
+      p_visual: scoreVisual,
+      p_engagement: scoreEngagement,
+      p_result: result,
+      p_notes: notes?.trim() || undefined,
+    })
+
+    if (error) {
+      console.error('record_observation RPC error:', error)
+      return { error: error.message || 'Gagal menyimpan hasil sesi observasi.' }
+    }
+
+    revalidatePath('/trainer')
+    revalidatePath(`/trainer/trainees/${traineeId}`)
+    revalidatePath('/dashboard')
+    revalidatePath(`/term/${termId}`)
+
+    return {
+      success: true,
+      message:
+        result === 'pass'
+          ? 'Hasil observasi disimpan: Trainee dinyatakan Lulus (Pass) dan meraih predikat Layak Mengajar!'
+          : 'Hasil observasi disimpan: Trainee dijadwalkan untuk observasi ulang (Retry).',
+    }
+  } catch (error: unknown) {
+    console.error('recordObservationAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}

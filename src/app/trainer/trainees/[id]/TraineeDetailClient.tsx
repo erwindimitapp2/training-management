@@ -1053,8 +1053,8 @@ export function TraineeDetailClient({ trainee, terms }: TraineeDetailClientProps
 
       {/* STATUS VERIFICATION ACTION MODAL */}
       {activeStatusModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4 max-h-[90vh] overflow-y-auto">
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2.5">
@@ -1228,19 +1228,19 @@ export function TraineeDetailClient({ trainee, terms }: TraineeDetailClientProps
 
       {/* OBSERVATION SCORING MODAL */}
       {observationModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-xl w-full p-6 sm:p-7 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-5 my-8">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 bg-slate-900/60 backdrop-blur-xs overflow-hidden animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[92vh] sm:max-h-[88vh] overflow-hidden">
+            {/* Modal Header (Fixed / Shrink-0) */}
+            <div className="px-5 py-3.5 sm:px-6 sm:py-4 border-b border-slate-100 dark:border-slate-800 shrink-0 flex items-center justify-between bg-white dark:bg-slate-900">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center shrink-0">
                   <Award className="w-5 h-5" />
                 </div>
-                <div>
-                  <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                <div className="min-w-0">
+                  <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white truncate">
                     Form Observasi Mengajar (Main Teacher)
                   </h3>
-                  <p className="text-xs text-slate-500 font-medium">
+                  <p className="text-xs text-slate-500 font-medium truncate">
                     {observationModal.termName} • Trainee: @{trainee.username} ({trainee.name})
                   </p>
                 </div>
@@ -1249,337 +1249,258 @@ export function TraineeDetailClient({ trainee, terms }: TraineeDetailClientProps
               <button
                 type="button"
                 onClick={() => setObservationModal(null)}
-                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0 ml-2"
+                aria-label="Tutup form observasi"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Error in modal */}
-            {actionError && (
-              <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2 border border-rose-200 dark:border-rose-800">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span>{actionError}</span>
-              </div>
-            )}
+            {/* Modal Body (Scrollable / Flex-1) */}
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4">
+              {/* Error in modal */}
+              {actionError && (
+                <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2 border border-rose-200 dark:border-rose-800">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{actionError}</span>
+                </div>
+              )}
 
-            {/* Session Date */}
-            <div>
-              <label
-                htmlFor="obs-session-date"
-                className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5"
-              >
-                Tanggal Observasi Kelas <span className="text-rose-500">*</span>
-              </label>
-              <input
-                id="obs-session-date"
-                type="date"
-                value={sessionDate}
-                onChange={(e) => setSessionDate(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-              />
-            </div>
-
-            {/* 5 Assessment Criteria */}
-            <div className="space-y-4 pt-1">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                  Penilaian 5 Kriteria (Skala 1 - 5)
-                </h4>
-                <div className="px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 text-xs font-bold flex items-center gap-1">
-                  <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
-                  <span>
-                    Rata-rata:{' '}
-                    {(
-                      (scorePreparation +
-                        scoreDelivery +
-                        scoreMastery +
-                        scoreVisual +
-                        scoreEngagement) /
-                      5
-                    ).toFixed(1)}{' '}
-                    / 5.0
-                  </span>
-                </div>
-              </div>
-
-              {/* Criterion 1: Preparation */}
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <span className="text-xs font-bold text-slate-900 dark:text-white block">
-                      1. Persiapan Mengajar (Preparation)
-                    </span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Rencana pelaksanaan ajar, kesiapan alat, media &amp; modul materi.
-                    </span>
-                  </div>
-                  <span className="text-xs font-bold text-amber-600 dark:text-amber-400 shrink-0">
-                    {scorePreparation} / 5
-                  </span>
-                </div>
-                <div className="grid grid-cols-5 gap-1.5 pt-1">
-                  {[1, 2, 3, 4, 5].map((val) => (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => setScorePreparation(val)}
-                      className={`py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
-                        scorePreparation === val
-                          ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
-                          : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-amber-300'
-                      }`}
-                    >
-                      {val}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Criterion 2: Delivery */}
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <span className="text-xs font-bold text-slate-900 dark:text-white block">
-                      2. Cara Penyampaian (Delivery)
-                    </span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Intonasi vokal, kejelasan instruksi, manajemen waktu &amp; pacing materi.
-                    </span>
-                  </div>
-                  <span className="text-xs font-bold text-amber-600 dark:text-amber-400 shrink-0">
-                    {scoreDelivery} / 5
-                  </span>
-                </div>
-                <div className="grid grid-cols-5 gap-1.5 pt-1">
-                  {[1, 2, 3, 4, 5].map((val) => (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => setScoreDelivery(val)}
-                      className={`py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
-                        scoreDelivery === val
-                          ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
-                          : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-amber-300'
-                      }`}
-                    >
-                      {val}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Criterion 3: Mastery */}
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <span className="text-xs font-bold text-slate-900 dark:text-white block">
-                      3. Penguasaan Kelas &amp; Materi (Mastery)
-                    </span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Pemahaman materi mendalam, menjawab pertanyaan murid, handling situasi kelas.
-                    </span>
-                  </div>
-                  <span className="text-xs font-bold text-amber-600 dark:text-amber-400 shrink-0">
-                    {scoreMastery} / 5
-                  </span>
-                </div>
-                <div className="grid grid-cols-5 gap-1.5 pt-1">
-                  {[1, 2, 3, 4, 5].map((val) => (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => setScoreMastery(val)}
-                      className={`py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
-                        scoreMastery === val
-                          ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
-                          : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-amber-300'
-                      }`}
-                    >
-                      {val}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Criterion 4: Visual */}
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <span className="text-xs font-bold text-slate-900 dark:text-white block">
-                      4. Penggunaan Visual &amp; Media (Visual)
-                    </span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Pemanfaatan slide, alat peraga visual, papan tulis, kejelasan display.
-                    </span>
-                  </div>
-                  <span className="text-xs font-bold text-amber-600 dark:text-amber-400 shrink-0">
-                    {scoreVisual} / 5
-                  </span>
-                </div>
-                <div className="grid grid-cols-5 gap-1.5 pt-1">
-                  {[1, 2, 3, 4, 5].map((val) => (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => setScoreVisual(val)}
-                      className={`py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
-                        scoreVisual === val
-                          ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
-                          : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-amber-300'
-                      }`}
-                    >
-                      {val}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Criterion 5: Engagement */}
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <span className="text-xs font-bold text-slate-900 dark:text-white block">
-                      5. Interaksi &amp; Keterlibatan Murid (Engagement)
-                    </span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Interaksi dua arah, memotivasi siswa, perhatian merata &amp; energi positif.
-                    </span>
-                  </div>
-                  <span className="text-xs font-bold text-amber-600 dark:text-amber-400 shrink-0">
-                    {scoreEngagement} / 5
-                  </span>
-                </div>
-                <div className="grid grid-cols-5 gap-1.5 pt-1">
-                  {[1, 2, 3, 4, 5].map((val) => (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => setScoreEngagement(val)}
-                      className={`py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
-                        scoreEngagement === val
-                          ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
-                          : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-amber-300'
-                      }`}
-                    >
-                      {val}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Decision: Result Selector (Pass vs Retry) */}
-            <div className="space-y-2 pt-1">
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                Keputusan Hasil Observasi <span className="text-rose-500">*</span>
-              </label>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* Option 1: Pass */}
-                <div
-                  onClick={() => setObsResult('pass')}
-                  className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-3 ${
-                    obsResult === 'pass'
-                      ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/40 shadow-xs'
-                      : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300'
-                  }`}
+              {/* Session Date */}
+              <div>
+                <label
+                  htmlFor="obs-session-date"
+                  className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5"
                 >
+                  Tanggal Observasi Kelas <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  id="obs-session-date"
+                  type="date"
+                  value={sessionDate}
+                  onChange={(e) => setSessionDate(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                />
+              </div>
+
+              {/* 5 Assessment Criteria */}
+              <div className="space-y-2.5 pt-1">
+                <div className="flex items-center justify-between pb-1">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                    Penilaian 5 Kriteria (Skala 1 - 5)
+                  </h4>
+                  <span className="text-[11px] text-slate-400">Pilih nilai untuk tiap aspek</span>
+                </div>
+
+                {[
+                  {
+                    id: 'prep',
+                    num: 1,
+                    title: 'Persiapan Mengajar (Preparation)',
+                    desc: 'Rencana pelaksanaan ajar, kesiapan alat, media & modul materi.',
+                    value: scorePreparation,
+                    setValue: setScorePreparation,
+                  },
+                  {
+                    id: 'delivery',
+                    num: 2,
+                    title: 'Cara Penyampaian (Delivery)',
+                    desc: 'Intonasi vokal, kejelasan instruksi, manajemen waktu & pacing materi.',
+                    value: scoreDelivery,
+                    setValue: setScoreDelivery,
+                  },
+                  {
+                    id: 'mastery',
+                    num: 3,
+                    title: 'Penguasaan Kelas & Materi (Mastery)',
+                    desc: 'Pemahaman konsep materi mendalam, menjawab pertanyaan & handling kelas.',
+                    value: scoreMastery,
+                    setValue: setScoreMastery,
+                  },
+                  {
+                    id: 'visual',
+                    num: 4,
+                    title: 'Penggunaan Visual & Media (Visual)',
+                    desc: 'Pemanfaatan slide, alat peraga visual, papan tulis & kejelasan display.',
+                    value: scoreVisual,
+                    setValue: setScoreVisual,
+                  },
+                  {
+                    id: 'engagement',
+                    num: 5,
+                    title: 'Interaksi & Keterlibatan Murid (Engagement)',
+                    desc: 'Interaksi dua arah, memotivasi siswa, perhatian merata & energi positif.',
+                    value: scoreEngagement,
+                    setValue: setScoreEngagement,
+                  },
+                ].map((crit) => (
                   <div
-                    className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
+                    key={crit.id}
+                    className="p-3 sm:p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 transition-colors hover:border-slate-300 dark:hover:border-slate-600"
+                  >
+                    <div className="min-w-0 pr-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-900 dark:text-white">
+                          {crit.num}. {crit.title}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">
+                        {crit.desc}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                      {[1, 2, 3, 4, 5].map((val) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => crit.setValue(val)}
+                          className={`w-8 h-8 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center justify-center ${
+                            crit.value === val
+                              ? 'bg-amber-500 text-white border-amber-500 shadow-xs ring-2 ring-amber-500/20'
+                              : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-amber-300 dark:hover:border-amber-700'
+                          }`}
+                          aria-label={`${crit.title} nilai ${val}`}
+                        >
+                          {val}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Decision: Result Selector (Pass vs Retry) */}
+              <div className="space-y-2 pt-1">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Keputusan Hasil Observasi <span className="text-rose-500">*</span>
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {/* Option 1: Pass */}
+                  <div
+                    onClick={() => setObsResult('pass')}
+                    className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer flex items-start gap-3 ${
                       obsResult === 'pass'
-                        ? 'border-emerald-600 bg-emerald-600 text-white'
-                        : 'border-slate-300'
+                        ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/40 shadow-xs'
+                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300'
                     }`}
                   >
-                    {obsResult === 'pass' && <div className="w-2 h-2 rounded-full bg-white" />}
+                    <div
+                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
+                        obsResult === 'pass'
+                          ? 'border-emerald-600 bg-emerald-600 text-white'
+                          : 'border-slate-300 dark:border-slate-600'
+                      }`}
+                    >
+                      {obsResult === 'pass' && <div className="w-2 h-2 rounded-full bg-white" />}
+                    </div>
+                    <div>
+                      <span className="font-bold text-xs sm:text-sm text-emerald-900 dark:text-emerald-200 block">
+                        Lulus (Pass) — Layak Mengajar
+                      </span>
+                      <span className="text-[11px] text-emerald-700 dark:text-emerald-400 leading-snug block mt-0.5">
+                        Trainee resmi dinyatakan <strong>Layak Mengajar</strong> (Gold Badge) untuk
+                        term ini.
+                      </span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="font-bold text-xs sm:text-sm text-emerald-900 dark:text-emerald-200 block">
-                      Lulus (Pass) — Layak Mengajar
-                    </span>
-                    <span className="text-[11px] text-emerald-700 dark:text-emerald-400 leading-snug block mt-0.5">
-                      Trainee resmi dinyatakan <strong>Layak Mengajar</strong> (Gold Badge) untuk
-                      term ini.
-                    </span>
-                  </div>
-                </div>
 
-                {/* Option 2: Retry */}
-                <div
-                  onClick={() => setObsResult('retry')}
-                  className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-3 ${
-                    obsResult === 'retry'
-                      ? 'border-rose-500 bg-rose-50/70 dark:bg-rose-950/40 shadow-xs'
-                      : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300'
-                  }`}
-                >
+                  {/* Option 2: Retry */}
                   <div
-                    className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
+                    onClick={() => setObsResult('retry')}
+                    className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer flex items-start gap-3 ${
                       obsResult === 'retry'
-                        ? 'border-rose-600 bg-rose-600 text-white'
-                        : 'border-slate-300'
+                        ? 'border-rose-500 bg-rose-50/70 dark:bg-rose-950/40 shadow-xs'
+                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300'
                     }`}
                   >
-                    {obsResult === 'retry' && <div className="w-2 h-2 rounded-full bg-white" />}
-                  </div>
-                  <div>
-                    <span className="font-bold text-xs sm:text-sm text-rose-900 dark:text-rose-200 block">
-                      Ulang (Retry) — Observasi Ulang
-                    </span>
-                    <span className="text-[11px] text-rose-700 dark:text-rose-400 leading-snug block mt-0.5">
-                      Trainee perlu pendampingan dan evaluasi ulang pada sesi mengajar berikutnya.
-                    </span>
+                    <div
+                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
+                        obsResult === 'retry'
+                          ? 'border-rose-600 bg-rose-600 text-white'
+                          : 'border-slate-300 dark:border-slate-600'
+                      }`}
+                    >
+                      {obsResult === 'retry' && <div className="w-2 h-2 rounded-full bg-white" />}
+                    </div>
+                    <div>
+                      <span className="font-bold text-xs sm:text-sm text-rose-900 dark:text-rose-200 block">
+                        Ulang (Retry) — Observasi Ulang
+                      </span>
+                      <span className="text-[11px] text-rose-700 dark:text-rose-400 leading-snug block mt-0.5">
+                        Trainee perlu pendampingan dan evaluasi ulang pada sesi mengajar berikutnya.
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
+
+              {/* Notes Textarea */}
+              <div>
+                <label
+                  htmlFor="obs-notes-textarea"
+                  className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5"
+                >
+                  Catatan Evaluasi &amp; Umpan Balik (Feedback)
+                </label>
+                <textarea
+                  id="obs-notes-textarea"
+                  rows={2}
+                  value={obsNotes}
+                  onChange={(e) => setObsNotes(e.target.value)}
+                  placeholder="Tuliskan catatan kelebihan dan hal yang perlu ditingkatkan trainee saat mengajar..."
+                  className="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 resize-none"
+                />
+              </div>
             </div>
 
-            {/* Notes Textarea */}
-            <div>
-              <label
-                htmlFor="obs-notes-textarea"
-                className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5"
-              >
-                Catatan Evaluasi &amp; Umpan Balik (Feedback)
-              </label>
-              <textarea
-                id="obs-notes-textarea"
-                rows={3}
-                value={obsNotes}
-                onChange={(e) => setObsNotes(e.target.value)}
-                placeholder="Tuliskan catatan kelebihan dan hal yang perlu ditingkatkan trainee saat mengajar..."
-                className="w-full p-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 resize-none"
-              />
-            </div>
+            {/* Modal Footer (Fixed / Shrink-0) */}
+            <div className="px-5 py-3 sm:px-6 sm:py-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-xs shrink-0 flex items-center justify-between gap-3">
+              {/* Average score indicator */}
+              <div className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 text-xs font-bold flex items-center gap-1.5 shrink-0">
+                <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500 shrink-0" />
+                <span>
+                  Rata-rata:{' '}
+                  {(
+                    (scorePreparation +
+                      scoreDelivery +
+                      scoreMastery +
+                      scoreVisual +
+                      scoreEngagement) /
+                    5
+                  ).toFixed(1)}{' '}
+                  / 5.0
+                </span>
+              </div>
 
-            {/* Modal Actions */}
-            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2.5">
-              <button
-                type="button"
-                disabled={isSubmittingObs}
-                onClick={() => setObservationModal(null)}
-                className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer disabled:cursor-not-allowed"
-              >
-                Batal
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={isSubmittingObs}
+                  onClick={() => setObservationModal(null)}
+                  className="px-3.5 sm:px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer disabled:cursor-not-allowed transition-colors"
+                >
+                  Batal
+                </button>
 
-              <button
-                id="btn-submit-observation"
-                type="button"
-                disabled={isSubmittingObs || !sessionDate}
-                onClick={handleSubmitObservation}
-                className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white text-xs font-bold shadow-md hover:shadow-amber-500/25 transition-all flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed"
-              >
-                {isSubmittingObs ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Menyimpan Hasil...</span>
-                  </>
-                ) : (
-                  <span>Simpan Hasil Observasi</span>
-                )}
-              </button>
+                <button
+                  id="btn-submit-observation"
+                  type="button"
+                  disabled={isSubmittingObs || !sessionDate}
+                  onClick={handleSubmitObservation}
+                  className="px-4 sm:px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 dark:disabled:bg-amber-800/40 text-white text-xs font-bold shadow-sm hover:shadow-amber-500/25 transition-all flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {isSubmittingObs ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Menyimpan...</span>
+                    </>
+                  ) : (
+                    <span>Simpan Hasil Observasi</span>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>

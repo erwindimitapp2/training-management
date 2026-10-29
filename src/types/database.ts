@@ -344,6 +344,19 @@ export interface Database {
         }
         Returns: boolean
       }
+      assign_terms: {
+        Args: {
+          p_trainee_id: string
+          p_term_ids: number[]
+        }
+        Returns: number
+      }
+      unassign_term: {
+        Args: {
+          p_trainee_term_id: number
+        }
+        Returns: void
+      }
       change_term_status: {
         Args: {
           p_trainee_term_id: number

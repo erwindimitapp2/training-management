@@ -178,9 +178,13 @@ export default async function TraineeDetailPage({ params }: PageProps) {
       observationList = obsData as unknown as typeof observationList
     }
 
-    // 9. Assemble into TermDetail[]
-    const terms: TermDetail[] = termsList.map((term) => {
-      const tt = traineeTerms.find((t) => t.term_id === term.id) || null
+    // 9. Assemble into TermDetail[] - ONLY assigned terms
+    const assignedTermsList = termsList.filter((term) =>
+      traineeTerms.some((tt) => tt.term_id === term.id)
+    )
+
+    const terms: TermDetail[] = assignedTermsList.map((term) => {
+      const tt = traineeTerms.find((t) => t.term_id === term.id)!
       const termLessons = masterLessons.filter((l) => l.term_id === term.id)
 
       const lessons = termLessons.map((l) => {
@@ -194,18 +198,16 @@ export default async function TraineeDetailPage({ params }: PageProps) {
         }
       })
 
-      const history = tt
-        ? statusHistoryList
-            .filter((h) => h.trainee_term_id === tt.id)
-            .map((h) => ({
-              id: h.id,
-              fromStatus: h.from_status,
-              toStatus: h.to_status,
-              note: h.note,
-              changedAt: h.changed_at,
-              changedByName: h.users?.name || 'Trainer',
-            }))
-        : []
+      const history = statusHistoryList
+        .filter((h) => h.trainee_term_id === tt.id)
+        .map((h) => ({
+          id: h.id,
+          fromStatus: h.from_status,
+          toStatus: h.to_status,
+          note: h.note,
+          changedAt: h.changed_at,
+          changedByName: h.users?.name || 'Trainer',
+        }))
 
       const observations = observationList
         .filter((o) => o.term_id === term.id)
@@ -227,15 +229,13 @@ export default async function TraineeDetailPage({ params }: PageProps) {
         name: term.name,
         sortOrder: term.sort_order,
         level: term.level,
-        traineeTerm: tt
-          ? {
-              id: tt.id,
-              status: tt.status,
-              clearedToTeach: tt.cleared_to_teach,
-              completedAt: tt.completed_at,
-              updatedAt: tt.updated_at,
-            }
-          : null,
+        traineeTerm: {
+          id: tt.id,
+          status: tt.status,
+          clearedToTeach: tt.cleared_to_teach,
+          completedAt: tt.completed_at,
+          updatedAt: tt.updated_at,
+        },
         lessons,
         history,
         observations,
@@ -268,6 +268,12 @@ export default async function TraineeDetailPage({ params }: PageProps) {
             }}
             branches={branches}
             terms={terms}
+            masterTerms={termsList.map((t) => ({
+              id: t.id,
+              name: t.name,
+              level: t.level as ProgramLevel,
+              sortOrder: t.sort_order,
+            }))}
           />
         </main>
       </div>
@@ -278,7 +284,7 @@ export default async function TraineeDetailPage({ params }: PageProps) {
       error !== null &&
       'digest' in error &&
       typeof (error as { digest: unknown }).digest === 'string' &&
-      (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+      (error as { digest: string }).digest.startsWith('NEXT_')
     ) {
       throw error
     }

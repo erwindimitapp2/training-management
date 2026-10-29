@@ -34,7 +34,15 @@ export function DashboardTabsClient({
   kinderTerms,
   juniorTerms,
 }: DashboardTabsClientProps) {
-  const [activeTab, setActiveTab] = useState<'all' | 'kinder' | 'junior'>('all')
+  const hasKinder = kinderTerms.length > 0
+  const hasJunior = juniorTerms.length > 0
+
+  const [activeTab, setActiveTab] = useState<'all' | 'kinder' | 'junior'>(() => {
+    if (hasKinder && hasJunior) return 'all'
+    if (hasKinder) return 'kinder'
+    if (hasJunior) return 'junior'
+    return 'all'
+  })
 
   const kinderStudied = kinderTerms.reduce((sum, t) => sum + t.studiedLessonsCount, 0)
   const juniorStudied = juniorTerms.reduce((sum, t) => sum + t.studiedLessonsCount, 0)
@@ -44,6 +52,8 @@ export function DashboardTabsClient({
 
   const kinderCleared = kinderTerms.filter((t) => t.clearedToTeach).length
   const juniorCleared = juniorTerms.filter((t) => t.clearedToTeach).length
+
+  const totalTerms = kinderTerms.length + juniorTerms.length
 
   const renderTermCard = (term: TermCardItem) => {
     const status = term.status || 'in_self_training'
@@ -132,57 +142,59 @@ export function DashboardTabsClient({
 
   return (
     <div className="space-y-8">
-      {/* Level Tabs Navigation */}
-      <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 flex-wrap gap-3">
-        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700/60">
-          <button
-            type="button"
-            onClick={() => setActiveTab('all')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-              activeTab === 'all'
-                ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            Semua Level (12 Term)
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('kinder')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'kinder'
-                ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <span>Kinder Level</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300">
-              {kinderStudied}/60
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('junior')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'junior'
-                ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <span>Junior Level</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300">
-              {juniorStudied}/60
-            </span>
-          </button>
+      {/* Level Tabs Navigation - only shown if both levels have assigned terms */}
+      {hasKinder && hasJunior && (
+        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 flex-wrap gap-3">
+          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700/60">
+            <button
+              type="button"
+              onClick={() => setActiveTab('all')}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'all'
+                  ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Semua Level ({totalTerms} Term)
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('kinder')}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'kinder'
+                  ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <span>Kinder Level</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300">
+                {kinderStudied}/{kinderTerms.length * 10}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('junior')}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'junior'
+                  ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <span>Junior Level</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300">
+                {juniorStudied}/{juniorTerms.length * 10}
+              </span>
+            </button>
+          </div>
+
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Hanya menampilkan term yang telah di-assign oleh Trainer Anda.
+          </p>
         </div>
+      )}
 
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          Semua level dan term terbuka. Anda bebas belajar materi mana saja terlebih dahulu.
-        </p>
-      </div>
-
-      {/* SECTION 1: Kinder Level */}
-      {(activeTab === 'all' || activeTab === 'kinder') && (
+      {/* SECTION 1: Kinder Level (only if hasKinder) */}
+      {hasKinder && (activeTab === 'all' || activeTab === 'kinder') && (
         <section className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-4 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40">
             <div className="flex items-center gap-3">
@@ -192,14 +204,14 @@ export function DashboardTabsClient({
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">
-                    Kinder Program (6 Term)
+                    Kinder Program ({kinderTerms.length} Term)
                   </h2>
                   <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
                     PAUD / TK
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Foundation 1, Foundation 2, dan Term 1 sampai 4
+                  Materi pelatihan level Kinder yang di-assign oleh Trainer
                 </p>
               </div>
             </div>
@@ -208,14 +220,14 @@ export function DashboardTabsClient({
               <div className="text-right">
                 <span className="text-slate-400 block text-[11px]">Progres Kinder</span>
                 <span className="font-bold text-slate-800 dark:text-slate-200">
-                  {kinderStudied} / 60 Lesson
+                  {kinderStudied} / {kinderTerms.length * 10} Lesson
                 </span>
               </div>
               <div className="h-7 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block" />
               <div className="text-right">
                 <span className="text-slate-400 block text-[11px]">Ready for Trial</span>
                 <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                  {kinderReadyForTrial} / 6 Term
+                  {kinderReadyForTrial} / {kinderTerms.length} Term
                 </span>
               </div>
               {kinderCleared > 0 && (
@@ -238,8 +250,8 @@ export function DashboardTabsClient({
         </section>
       )}
 
-      {/* SECTION 2: Junior Level */}
-      {(activeTab === 'all' || activeTab === 'junior') && (
+      {/* SECTION 2: Junior Level (only if hasJunior) */}
+      {hasJunior && (activeTab === 'all' || activeTab === 'junior') && (
         <section className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-4 rounded-2xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-900/40">
             <div className="flex items-center gap-3">
@@ -249,14 +261,14 @@ export function DashboardTabsClient({
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">
-                    Junior Program (6 Term)
+                    Junior Program ({juniorTerms.length} Term)
                   </h2>
                   <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-300">
                     Sekolah Dasar (SD)
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Foundation 1, Foundation 2, dan Term 1 sampai 4
+                  Materi pelatihan level Junior yang di-assign oleh Trainer
                 </p>
               </div>
             </div>
@@ -265,14 +277,14 @@ export function DashboardTabsClient({
               <div className="text-right">
                 <span className="text-slate-400 block text-[11px]">Progres Junior</span>
                 <span className="font-bold text-slate-800 dark:text-slate-200">
-                  {juniorStudied} / 60 Lesson
+                  {juniorStudied} / {juniorTerms.length * 10} Lesson
                 </span>
               </div>
               <div className="h-7 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block" />
               <div className="text-right">
                 <span className="text-slate-400 block text-[11px]">Ready for Trial</span>
                 <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                  {juniorReadyForTrial} / 6 Term
+                  {juniorReadyForTrial} / {juniorTerms.length} Term
                 </span>
               </div>
               {juniorCleared > 0 && (

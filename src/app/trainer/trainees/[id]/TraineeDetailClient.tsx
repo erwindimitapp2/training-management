@@ -12,6 +12,7 @@ import {
 } from '@/app/trainer/actions'
 import { ProgramLevel, TermStatus, ObservationResult } from '@/types/database'
 import { STATUS_LABELS, STATUS_STYLES, GOLD_BADGE_STYLE } from '@/lib/constants'
+import { AssignTermModal, MasterTermItem } from '@/components/AssignTermModal'
 import {
   ArrowLeft,
   Lock,
@@ -40,6 +41,7 @@ import {
   Star,
   Building2,
   MapPin,
+  Layers,
 } from 'lucide-react'
 
 export interface TermDetail {
@@ -96,12 +98,16 @@ interface TraineeDetailClientProps {
   }
   branches: Array<{ id: number; name: string }>
   terms: TermDetail[]
+  masterTerms: MasterTermItem[]
 }
 
-export function TraineeDetailClient({ trainee, branches, terms }: TraineeDetailClientProps) {
+export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: TraineeDetailClientProps) {
   const [isActive, setIsActive] = useState(trainee.isActive)
   const [branchName, setBranchName] = useState(trainee.branchName)
   const [branchId, setBranchId] = useState<number | null>(trainee.branchId)
+
+  // Assign Term modal state
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false)
 
   // Branch change modal state
   const [isBranchModalOpen, setIsBranchModalOpen] = useState(false)
@@ -149,6 +155,10 @@ export function TraineeDetailClient({ trainee, branches, terms }: TraineeDetailC
 
   // Level tab state ('kinder' | 'junior')
   const [levelTab, setLevelTab] = useState<'kinder' | 'junior'>(() => {
+    const hasKinder = terms.some((t) => t.level === 'kinder')
+    const hasJunior = terms.some((t) => t.level === 'junior')
+    if (!hasKinder && hasJunior) return 'junior'
+
     const attentionTerm = terms.find(
       (t) =>
         t.traineeTerm?.status === 'ready_for_check' ||
@@ -466,6 +476,17 @@ export function TraineeDetailClient({ trainee, branches, terms }: TraineeDetailC
 
           {/* Action buttons */}
           <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 flex-wrap">
+            {/* Assign Term Button */}
+            <button
+              id="btn-open-assign-term"
+              type="button"
+              onClick={() => setIsAssignModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition-all cursor-pointer"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Assign Term</span>
+            </button>
+
             {/* Pindah Cabang Button */}
             <button
               id="btn-open-change-branch"
@@ -571,72 +592,108 @@ export function TraineeDetailClient({ trainee, branches, terms }: TraineeDetailC
           <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40">
             <span className="text-slate-400 block mb-0.5">Progres Keseluruhan</span>
             <span className="text-base font-bold text-indigo-600 dark:text-indigo-400">
-              {Math.round((totalLessonsStudied / (terms.length * 10)) * 100)}%
+              {terms.length > 0 ? Math.round((totalLessonsStudied / (terms.length * 10)) * 100) : 0}%
             </span>
           </div>
         </div>
       </div>
 
-      {/* Level Tabs: Kinder & Junior */}
-      <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
-          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700/60">
-            <button
-              type="button"
-              onClick={() => setLevelTab('kinder')}
-              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 ${
-                levelTab === 'kinder'
-                  ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <span>Kinder Level (6 Term)</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 font-mono">
-                {kinderStudied}/60
-              </span>
-              {kinderNeedCheck > 0 && (
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Ada term Ready for Check" />
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setLevelTab('junior')}
-              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 ${
-                levelTab === 'junior'
-                  ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <span>Junior Level (6 Term)</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 font-mono">
-                {juniorStudied}/60
-              </span>
-              {juniorNeedCheck > 0 && (
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Ada term Ready for Check" />
-              )}
-            </button>
-          </div>
-
-          <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-3">
-            <span>
-              Ready for Trial:{' '}
-              <strong className="text-emerald-600 dark:text-emerald-400">
-                {levelTab === 'kinder' ? kinderReadyForTrial : juniorReadyForTrial}/6 Term
-              </strong>
-            </span>
-            <span>•</span>
-            <span>
-              Layak Mengajar:{' '}
-              <strong className="text-amber-600 dark:text-amber-400">
-                {levelTab === 'kinder' ? kinderCleared : juniorCleared}/6 Term
-              </strong>
-            </span>
-          </div>
+      {/* When no terms assigned at all */}
+      {terms.length === 0 ? (
+        <div className="p-12 text-center rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+          <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+            Belum ada term yang di-assign untuk trainee ini.
+          </p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+            Trainee belum memiliki akses ke materi. Klik tombol di bawah untuk meng-assign term Kinder atau Junior.
+          </p>
+          <button
+            type="button"
+            onClick={() => setIsAssignModalOpen(true)}
+            className="mt-2 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-md transition-all cursor-pointer"
+          >
+            <Layers className="w-4 h-4" />
+            <span>Assign Term Sekarang</span>
+          </button>
         </div>
+      ) : (
+        /* Level Tabs: Kinder & Junior */
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+            <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700/60">
+              <button
+                type="button"
+                onClick={() => setLevelTab('kinder')}
+                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 ${
+                  levelTab === 'kinder'
+                    ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <span>Kinder Level ({kinderTerms.length} Term)</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 font-mono">
+                  {kinderStudied}/{kinderTerms.length * 10}
+                </span>
+                {kinderNeedCheck > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Ada term Ready for Check" />
+                )}
+              </button>
 
-        {/* 6 Terms List for Selected Tab */}
-        {activeLevelTerms.map((term) => {
+              <button
+                type="button"
+                onClick={() => setLevelTab('junior')}
+                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 ${
+                  levelTab === 'junior'
+                    ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <span>Junior Level ({juniorTerms.length} Term)</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 font-mono">
+                  {juniorStudied}/{juniorTerms.length * 10}
+                </span>
+                {juniorNeedCheck > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Ada term Ready for Check" />
+                )}
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-3">
+              <span>
+                Ready for Trial:{' '}
+                <strong className="text-emerald-600 dark:text-emerald-400">
+                  {levelTab === 'kinder' ? kinderReadyForTrial : juniorReadyForTrial}/
+                  {levelTab === 'kinder' ? kinderTerms.length : juniorTerms.length} Term
+                </strong>
+              </span>
+              <span>•</span>
+              <span>
+                Layak Mengajar:{' '}
+                <strong className="text-amber-600 dark:text-amber-400">
+                  {levelTab === 'kinder' ? kinderCleared : juniorCleared}/
+                  {levelTab === 'kinder' ? kinderTerms.length : juniorTerms.length} Term
+                </strong>
+              </span>
+            </div>
+          </div>
+
+          {/* Assigned Terms for Selected Tab */}
+          {activeLevelTerms.length === 0 ? (
+            <div className="p-10 text-center rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+                Belum ada term {levelTab === 'kinder' ? 'Kinder' : 'Junior'} yang di-assign untuk trainee ini.
+              </p>
+              <button
+                type="button"
+                onClick={() => setIsAssignModalOpen(true)}
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition-all cursor-pointer"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Assign Term {levelTab === 'kinder' ? 'Kinder' : 'Junior'}</span>
+              </button>
+            </div>
+          ) : (
+            activeLevelTerms.map((term) => {
           const isExpanded = expandedTermId === term.termId
           const status = term.traineeTerm?.status || 'in_self_training'
           const statusStyle = STATUS_STYLES[status]
@@ -1125,8 +1182,10 @@ export function TraineeDetailClient({ trainee, branches, terms }: TraineeDetailC
               )}
             </div>
           )
-        })}
-      </div>
+        })
+      )}
+    </div>
+  )}
 
       {/* RESET PASSWORD MODAL */}
       {isResetOpen && (
@@ -1780,6 +1839,18 @@ export function TraineeDetailClient({ trainee, branches, terms }: TraineeDetailC
           </div>
         </div>
       )}
+
+      {/* ASSIGN TERM MODAL */}
+      <AssignTermModal
+        isOpen={isAssignModalOpen}
+        onClose={() => setIsAssignModalOpen(false)}
+        fixedTrainee={{
+          id: trainee.id,
+          name: trainee.name,
+          username: trainee.username,
+        }}
+        masterTerms={masterTerms}
+      />
     </div>
   )
 }

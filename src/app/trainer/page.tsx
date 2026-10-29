@@ -135,17 +135,14 @@ export default async function TrainerDashboardPage({ searchParams }: TrainerDash
     // 6. Build TraineeSummary list
     const trainees: TraineeSummary[] = traineeList.map((trainee) => {
       const userTerms = termsData.filter((t) => t.trainee_id === trainee.id)
-      const userStudied = studiedLessonsData.filter((l) => l.trainee_id === trainee.id)
+      const assignedTermsCount = userTerms.length
+      const assignedTermIdSet = new Set(userTerms.map((t) => t.term_id))
 
-      // Count kinder studied lessons (0..60)
-      const kinderLessonsStudied = userStudied.filter((l) =>
-        kinderTermIds.has(l.lessons?.term_id || 0)
-      ).length
-
-      // Count junior studied lessons (0..60)
-      const juniorLessonsStudied = userStudied.filter((l) =>
-        juniorTermIds.has(l.lessons?.term_id || 0)
-      ).length
+      // Studied lessons only in assigned terms
+      const userStudied = studiedLessonsData.filter(
+        (l) => l.trainee_id === trainee.id && assignedTermIdSet.has(l.lessons?.term_id || 0)
+      )
+      const totalLessonsStudied = userStudied.length
 
       // Completed terms count (status === 'ready_for_trial')
       const readyForTrialCount = userTerms.filter(
@@ -168,8 +165,8 @@ export default async function TrainerDashboardPage({ searchParams }: TrainerDash
         branchName: traineeBranchName,
         is_active: trainee.is_active,
         created_at: trainee.created_at || '',
-        kinderLessonsStudied,
-        juniorLessonsStudied,
+        assignedTermsCount,
+        totalLessonsStudied,
         readyForTrialCount,
         clearedTermsCount,
       }
@@ -257,6 +254,12 @@ export default async function TrainerDashboardPage({ searchParams }: TrainerDash
               branches={branches}
               branchSummaries={branchSummaries}
               initialCabang={initialCabangParam}
+              masterTerms={masterTerms.map((t) => ({
+                id: t.id,
+                name: t.name,
+                level: t.level as ProgramLevel,
+                sortOrder: t.sort_order,
+              }))}
             />
           </Suspense>
         </main>
@@ -268,7 +271,7 @@ export default async function TrainerDashboardPage({ searchParams }: TrainerDash
       error !== null &&
       'digest' in error &&
       typeof (error as { digest: unknown }).digest === 'string' &&
-      (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+      (error as { digest: string }).digest.startsWith('NEXT_')
     ) {
       throw error
     }

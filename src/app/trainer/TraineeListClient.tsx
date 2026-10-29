@@ -6,6 +6,7 @@ import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { resetTraineePasswordAction, setTraineeActiveAction } from './actions'
 import { ProgramLevel, TermStatus } from '@/types/database'
 import { STATUS_LABELS, STATUS_STYLES, GOLD_BADGE_STYLE } from '@/lib/constants'
+import { AssignTermModal, MasterTermItem } from '@/components/AssignTermModal'
 import {
   Search,
   UserPlus,
@@ -37,8 +38,8 @@ export type TraineeSummary = {
   branchName: string
   is_active: boolean
   created_at: string
-  kinderLessonsStudied: number
-  juniorLessonsStudied: number
+  assignedTermsCount: number
+  totalLessonsStudied: number
   readyForTrialCount: number
   clearedTermsCount: number
 }
@@ -71,6 +72,7 @@ interface TraineeListClientProps {
   branches: Array<{ id: number; name: string }>
   branchSummaries: BranchSummary[]
   initialCabang?: string
+  masterTerms: MasterTermItem[]
 }
 
 export function TraineeListClient({
@@ -79,6 +81,7 @@ export function TraineeListClient({
   branches,
   branchSummaries,
   initialCabang,
+  masterTerms,
 }: TraineeListClientProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -112,6 +115,14 @@ export function TraineeListClient({
 
   // Queue Level Filter (Semua / Kinder / Junior)
   const [queueLevelFilter, setQueueLevelFilter] = useState<'all' | 'kinder' | 'junior'>('all')
+
+  // Assign Term Modal state
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false)
+  const [assignModalTrainee, setAssignModalTrainee] = useState<{
+    id: string
+    name: string
+    username: string
+  } | null>(null)
 
   // Password reset modal state
   const [resetModalUser, setResetModalUser] = useState<TraineeSummary | null>(null)
@@ -197,13 +208,27 @@ export function TraineeListClient({
           </p>
         </div>
 
-        <Link
-          href="/trainer/trainees/new"
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-semibold shadow-md shadow-indigo-600/20 transition-all shrink-0 cursor-pointer"
-        >
-          <UserPlus className="w-4 h-4" />
-          <span>Daftarkan Trainee Baru</span>
-        </Link>
+        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+          <button
+            type="button"
+            onClick={() => {
+              setAssignModalTrainee(null)
+              setIsAssignModalOpen(true)
+            }}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs sm:text-sm font-semibold shadow-xs transition-all cursor-pointer"
+          >
+            <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+            <span>Assign Term</span>
+          </button>
+
+          <Link
+            href="/trainer/trainees/new"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-semibold shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>Daftarkan Trainee Baru</span>
+          </Link>
+        </div>
       </div>
 
       {/* Branch Summary Cards Grid */}
@@ -501,8 +526,8 @@ export function TraineeListClient({
                 <tr>
                   <th className="py-3.5 px-4">Nama Trainee</th>
                   <th className="py-3.5 px-4">Cabang</th>
-                  <th className="py-3.5 px-4">Progress Kinder</th>
-                  <th className="py-3.5 px-4">Progress Junior</th>
+                  <th className="py-3.5 px-4">Jumlah Term Di-assign</th>
+                  <th className="py-3.5 px-4">Progress</th>
                   <th className="py-3.5 px-4">Ready for Trial</th>
                   <th className="py-3.5 px-4">Layak Mengajar</th>
                   <th className="py-3.5 px-4">Akun</th>
@@ -511,8 +536,11 @@ export function TraineeListClient({
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {filteredTrainees.map((trainee) => {
-                  const kinderPercent = Math.round((trainee.kinderLessonsStudied / 60) * 100)
-                  const juniorPercent = Math.round((trainee.juniorLessonsStudied / 60) * 100)
+                  const maxLessons = trainee.assignedTermsCount * 10
+                  const progressPercent =
+                    trainee.assignedTermsCount > 0
+                      ? Math.round((trainee.totalLessonsStudied / maxLessons) * 100)
+                      : 0
 
                   return (
                     <tr
@@ -552,44 +580,39 @@ export function TraineeListClient({
                         )}
                       </td>
 
-                      {/* Progress Kinder (x/60) */}
+                      {/* Jumlah Term Di-assign */}
                       <td className="py-3.5 px-4">
-                        <div>
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <span className="font-semibold text-slate-900 dark:text-white">
-                              {trainee.kinderLessonsStudied} / 60
-                            </span>
-                            <span className="text-[10px] text-slate-400 font-mono">
-                              ({kinderPercent}%)
-                            </span>
-                          </div>
-                          <div className="w-24 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                            <div
-                              className="h-full bg-indigo-600 rounded-full transition-all"
-                              style={{ width: `${kinderPercent}%` }}
-                            />
-                          </div>
-                        </div>
+                        {trainee.assignedTermsCount === 0 ? (
+                          <span className="text-slate-400 italic">Belum ada term</span>
+                        ) : (
+                          <span className="font-semibold text-slate-800 dark:text-slate-200">
+                            {trainee.assignedTermsCount} Term
+                          </span>
+                        )}
                       </td>
 
-                      {/* Progress Junior (x/60) */}
+                      {/* Progress: x/(term*10) */}
                       <td className="py-3.5 px-4">
-                        <div>
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <span className="font-semibold text-slate-900 dark:text-white">
-                              {trainee.juniorLessonsStudied} / 60
-                            </span>
-                            <span className="text-[10px] text-slate-400 font-mono">
-                              ({juniorPercent}%)
-                            </span>
+                        {trainee.assignedTermsCount === 0 ? (
+                          <span className="text-slate-400 italic">Belum ada term</span>
+                        ) : (
+                          <div>
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <span className="font-semibold text-slate-900 dark:text-white">
+                                {trainee.totalLessonsStudied} / {maxLessons}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                ({progressPercent}%)
+                              </span>
+                            </div>
+                            <div className="w-24 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                              <div
+                                className="h-full bg-indigo-600 rounded-full transition-all"
+                                style={{ width: `${progressPercent}%` }}
+                              />
+                            </div>
                           </div>
-                          <div className="w-24 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                            <div
-                              className="h-full bg-purple-600 rounded-full transition-all"
-                              style={{ width: `${juniorPercent}%` }}
-                            />
-                          </div>
-                        </div>
+                        )}
                       </td>
 
                       {/* Ready for Trial count */}
@@ -636,6 +659,22 @@ export function TraineeListClient({
                       {/* Actions */}
                       <td className="py-3.5 px-4 text-right">
                         <div className="inline-flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAssignModalTrainee({
+                                id: trainee.id,
+                                name: trainee.name,
+                                username: trainee.username,
+                              })
+                              setIsAssignModalOpen(true)
+                            }}
+                            className="p-1.5 rounded-lg border border-indigo-200 dark:border-indigo-800/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 transition-colors cursor-pointer"
+                            title="Assign Term untuk trainee ini"
+                          >
+                            <Layers className="w-3.5 h-3.5" />
+                          </button>
+
                           <Link
                             href={`/trainer/trainees/${trainee.id}`}
                             className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-colors"
@@ -771,6 +810,19 @@ export function TraineeListClient({
           </div>
         </div>
       )}
+
+      {/* Assign Term Modal */}
+      <AssignTermModal
+        isOpen={isAssignModalOpen}
+        onClose={() => {
+          setIsAssignModalOpen(false)
+          setAssignModalTrainee(null)
+        }}
+        trainees={trainees}
+        fixedTrainee={assignModalTrainee || undefined}
+        initialBranchFilter={selectedBranch}
+        masterTerms={masterTerms}
+      />
     </div>
   )
 }

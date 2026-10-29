@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Navbar } from '@/components/Navbar'
 import { TermChecklistClient } from './TermChecklistClient'
@@ -15,7 +15,7 @@ export default async function TraineeTermPage({ params }: PageProps) {
   const termIdNum = parseInt(termId, 10)
 
   if (isNaN(termIdNum)) {
-    redirect('/dashboard')
+    notFound()
   }
 
   try {
@@ -55,12 +55,10 @@ export default async function TraineeTermPage({ params }: PageProps) {
       .single()
 
     if (termError || !termData) {
-      redirect('/dashboard')
+      notFound()
     }
 
-
-
-    // 3. Verify trainee has unlocked this term
+    // 3. Verify trainee has assigned row in trainee_terms
     const { data: traineeTermData, error: ttError } = await supabase
       .from('trainee_terms')
       .select('id, status, cleared_to_teach, completed_at, updated_at')
@@ -68,9 +66,9 @@ export default async function TraineeTermPage({ params }: PageProps) {
       .eq('term_id', termIdNum)
       .maybeSingle()
 
-    // If term has no row in trainee_terms, it is locked!
+    // If trainee does not have this term assigned, return 404 (do not leak contents)
     if (ttError || !traineeTermData) {
-      redirect('/dashboard')
+      notFound()
     }
 
     // 4. Fetch 10 lessons for this term
@@ -191,7 +189,7 @@ export default async function TraineeTermPage({ params }: PageProps) {
       error !== null &&
       'digest' in error &&
       typeof (error as { digest: unknown }).digest === 'string' &&
-      (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+      (error as { digest: string }).digest.startsWith('NEXT_')
     ) {
       throw error
     }

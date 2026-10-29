@@ -39,6 +39,14 @@ export default async function RegisterTraineePage() {
 
   const branches = branchesData || []
 
+  // Fetch all master terms for optional assign
+  const { data: termsData } = await supabase
+    .from('terms')
+    .select('id, name, level, sort_order')
+    .order('sort_order', { ascending: true })
+
+  const terms = termsData || []
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
       <Navbar
@@ -69,14 +77,18 @@ export default async function RegisterTraineePage() {
                 <span>Pendaftaran Trainee Baru</span>
               </h1>
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Daftarkan calon pengajar baru ke cabang pilihan. Akun akan langsung memiliki akses ke Term pertama.
+                Daftarkan calon pengajar baru ke cabang pilihan dan tentukan term awal yang di-assign (opsional).
               </p>
             </div>
           </div>
         </div>
 
         {/* Client Form Component */}
-        <RegisterTraineeForm branches={branches} defaultBranchId={profile.branch_id} />
+        <RegisterTraineeForm
+          branches={branches}
+          defaultBranchId={profile.branch_id}
+          masterTerms={terms}
+        />
       </main>
     </div>
   )

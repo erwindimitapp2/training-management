@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { usernameToEmail } from '@/lib/constants'
-import { ProgramLevel } from '@/types/database'
+import { ProgramLevel, TermStatus } from '@/types/database'
 
 export type ActionResponse = {
   error?: string
@@ -157,10 +157,53 @@ export async function registerTraineeAction(
       }
     }
 
+    // Step 2: Assign terms if selected (trainer session client, auth.uid())
+    const rawTermIds = formData.getAll('termIds')
+    const termIds = rawTermIds
+      .map((t) => parseInt(t.toString(), 10))
+      .filter((n) => !isNaN(n))
+
+    if (termIds.length > 0) {
+      try {
+        const supabase = await createClient()
+        const { data: addedCount, error: assignError } = await supabase.rpc('assign_terms', {
+          p_trainee_id: authUserId,
+          p_term_ids: termIds,
+        })
+
+        if (assignError) {
+          console.error('assign_terms RPC error during registration:', assignError)
+          revalidatePath('/trainer')
+          return {
+            success: true,
+            message:
+              'Akun berhasil dibuat, tetapi assign term gagal. Silakan assign dari tombol Assign Term.',
+            traineeId: authUserId,
+          }
+        }
+
+        revalidatePath('/trainer')
+        return {
+          success: true,
+          message: `Trainee ${name} (@${username}) berhasil didaftarkan di cabang ${branchData.name} dengan ${addedCount ?? termIds.length} term di-assign!`,
+          traineeId: authUserId,
+        }
+      } catch (assignCatchErr) {
+        console.error('Exception during assign_terms in registration:', assignCatchErr)
+        revalidatePath('/trainer')
+        return {
+          success: true,
+          message:
+            'Akun berhasil dibuat, tetapi assign term gagal. Silakan assign dari tombol Assign Term.',
+          traineeId: authUserId,
+        }
+      }
+    }
+
     revalidatePath('/trainer')
     return {
       success: true,
-      message: `Trainee ${name} (@${username}) berhasil didaftarkan di cabang ${branchData.name}!`,
+      message: `Trainee ${name} (@${username}) berhasil didaftarkan di cabang ${branchData.name}! Belum ada term yang di-assign.`,
       traineeId: authUserId,
     }
   } catch (error: unknown) {
@@ -520,6 +563,197 @@ export async function recordObservationAction(
     }
   } catch (error: unknown) {
     console.error('recordObservationAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}
+
+export type AssignedTermInfo = {
+  id: number // trainee_terms.id
+  termId: number
+  name: string
+  level: ProgramLevel
+  sortOrder: number
+  status: TermStatus
+  clearedToTeach: boolean
+  hasProgress: boolean
+}
+
+/**
+ * 6. getTraineeAssignedTermsAction
+ * Fetch assigned terms and check whether each term has progress.
+ * Used by the Assign Term modal.
+ */
+export async function getTraineeAssignedTermsAction(
+  traineeId: string
+): Promise<{ error?: string; assignedTerms?: AssignedTermInfo[] }> {
+  try {
+    await verifyActiveTrainer()
+
+    if (!traineeId) {
+      return { error: 'ID Trainee tidak valid.' }
+    }
+
+    const supabase = await createClient()
+
+    // 1. Fetch trainee_terms
+    const { data: ttData, error: ttError } = await supabase
+      .from('trainee_terms')
+      .select('id, term_id, status, cleared_to_teach, terms(id, name, level, sort_order)')
+      .eq('trainee_id', traineeId)
+
+    if (ttError) {
+      console.error('Error fetching trainee_terms for assign modal:', ttError)
+      return { error: 'Gagal mengambil data term trainee.' }
+    }
+
+    if (!ttData || ttData.length === 0) {
+      return { assignedTerms: [] }
+    }
+
+    const traineeTermIds = ttData.map((tt) => tt.id)
+
+    // 2. Fetch studied lessons for this trainee
+    const { data: studiedLessonsData } = await supabase
+      .from('trainee_lessons')
+      .select('lesson_id, studied, lessons(term_id)')
+      .eq('trainee_id', traineeId)
+      .eq('studied', true)
+
+    const studiedTermIdSet = new Set(
+      (studiedLessonsData || [])
+        .map((l) => (l.lessons as unknown as { term_id: number } | null)?.term_id)
+        .filter((id): id is number => typeof id === 'number')
+    )
+
+    // 3. Fetch status history with from_status not null
+    const { data: historyData } = await supabase
+      .from('status_history')
+      .select('id, trainee_term_id, from_status')
+      .in('trainee_term_id', traineeTermIds)
+      .not('from_status', 'is', null)
+
+    const historyTtIdSet = new Set((historyData || []).map((h) => h.trainee_term_id))
+
+    // 4. Map to AssignedTermInfo
+    const assignedTerms: AssignedTermInfo[] = ttData.map((tt) => {
+      const termObj = tt.terms as unknown as {
+        id: number
+        name: string
+        level: ProgramLevel
+        sort_order: number
+      } | null
+
+      const hasStudied = studiedTermIdSet.has(tt.term_id)
+      const hasHistory = historyTtIdSet.has(tt.id)
+      const hasProgress =
+        tt.cleared_to_teach ||
+        tt.status !== 'in_self_training' ||
+        hasStudied ||
+        hasHistory
+
+      return {
+        id: tt.id,
+        termId: tt.term_id,
+        name: termObj?.name || `Term ${tt.term_id}`,
+        level: termObj?.level || 'kinder',
+        sortOrder: termObj?.sort_order || 0,
+        status: tt.status,
+        clearedToTeach: tt.cleared_to_teach,
+        hasProgress,
+      }
+    })
+
+    return { assignedTerms }
+  } catch (error: unknown) {
+    console.error('getTraineeAssignedTermsAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}
+
+/**
+ * 7. saveTermAssignmentsAction
+ * Save term assignments diff:
+ * - Newly checked terms -> assign_terms (single call)
+ * - Unchecked terms -> unassign_term (per term)
+ */
+export async function saveTermAssignmentsAction({
+  traineeId,
+  toAssignTermIds,
+  toUnassignTraineeTermIds,
+}: {
+  traineeId: string
+  toAssignTermIds: number[]
+  toUnassignTraineeTermIds: number[]
+}): Promise<ActionResponse & { addedCount?: number; unassignedCount?: number }> {
+  try {
+    await verifyActiveTrainer()
+
+    if (!traineeId) {
+      return { error: 'ID Trainee tidak valid.' }
+    }
+
+    const supabase = await createClient()
+
+    let addedCount = 0
+    let unassignedCount = 0
+
+    // 1. Assign new terms (one call)
+    if (toAssignTermIds.length > 0) {
+      const { data, error: assignError } = await supabase.rpc('assign_terms', {
+        p_trainee_id: traineeId,
+        p_term_ids: toAssignTermIds,
+      })
+
+      if (assignError) {
+        console.error('assign_terms error:', assignError)
+        return { error: assignError.message || 'Gagal menambahkan term.' }
+      }
+
+      addedCount = typeof data === 'number' ? data : toAssignTermIds.length
+    }
+
+    // 2. Unassign terms (one by one per RPC signature)
+    if (toUnassignTraineeTermIds.length > 0) {
+      for (const ttId of toUnassignTraineeTermIds) {
+        const { error: unassignError } = await supabase.rpc('unassign_term', {
+          p_trainee_term_id: ttId,
+        })
+
+        if (unassignError) {
+          console.error('unassign_term error:', unassignError)
+          // Display the exact Indonesian error message returned from database
+          return { error: unassignError.message || 'Gagal mencabut term.' }
+        }
+
+        unassignedCount++
+      }
+    }
+
+    revalidatePath('/trainer')
+    revalidatePath(`/trainer/trainees/${traineeId}`)
+    revalidatePath('/dashboard')
+
+    let message = ''
+    if (addedCount > 0 && unassignedCount > 0) {
+      message = `${addedCount} term ditambahkan, ${unassignedCount} dicabut`
+    } else if (addedCount > 0) {
+      message = `${addedCount} term berhasil ditambahkan`
+    } else if (unassignedCount > 0) {
+      message = `${unassignedCount} term berhasil dicabut`
+    } else {
+      message = 'Tidak ada perubahan term yang disimpan.'
+    }
+
+    return {
+      success: true,
+      message,
+      addedCount,
+      unassignedCount,
+    }
+  } catch (error: unknown) {
+    console.error('saveTermAssignmentsAction error:', error)
     const errMessage = error instanceof Error ? error.message : String(error)
     return { error: errMessage }
   }

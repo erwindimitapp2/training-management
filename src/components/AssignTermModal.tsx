@@ -175,11 +175,18 @@ export function AssignTermModal({
     )
   }
 
-  // Pilih Semua shortcut
-  const handleSelectAll = () => {
-    // Check all 6 terms of the current level
+  // Centang Semua
+  const handleCheckAll = () => {
     const allIds = currentLevelMasterTerms.map((t) => t.id)
     setCheckedTermIds(allIds)
+  }
+
+  // Kosongkan Semua: hapus centang kecuali term yang sudah punya progres
+  const handleUncheckAll = () => {
+    const keepIds = currentLevelMasterTerms
+      .filter((t) => assignedMap.get(t.id)?.hasProgress)
+      .map((t) => t.id)
+    setCheckedTermIds(keepIds)
   }
 
   // Calculate diff for current level
@@ -393,13 +400,23 @@ export function AssignTermModal({
                 <span className="capitalize">{selectedLevel}</span> ({checkedTermIds.length} dipilih)
               </label>
 
-              <button
-                type="button"
-                onClick={handleSelectAll}
-                className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
-              >
-                Pilih Semua
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCheckAll}
+                  className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                >
+                  Centang Semua
+                </button>
+                <span className="text-slate-300 dark:text-slate-600">•</span>
+                <button
+                  type="button"
+                  onClick={handleUncheckAll}
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 cursor-pointer"
+                >
+                  Kosongkan Semua
+                </button>
+              </div>
             </div>
 
             {isLoadingTerms ? (

@@ -1,10 +1,14 @@
 'use client'
 
-import { useState, useTransition, useOptimistic } from 'react'
+import { useState, useTransition, useOptimistic, useEffect } from 'react'
 import Link from 'next/link'
-import { toggleLessonAction, submitReadyForCheckAction } from '@/app/trainee/actions'
+import {
+  toggleLessonAction,
+  updateLessonEvidenceAction,
+  submitReadyForCheckAction,
+} from '@/app/trainee/actions'
 import { TermStatus, ObservationResult } from '@/types/database'
-import { STATUS_LABELS, STATUS_STYLES, GOLD_BADGE_STYLE } from '@/lib/constants'
+import { STATUS_LABELS, STATUS_STYLES, GOLD_BADGE_STYLE, isValidHttpUrl } from '@/lib/constants'
 import {
   ArrowLeft,
   CheckCircle2,
@@ -21,6 +25,8 @@ import {
   ChevronUp,
   Star,
   GraduationCap,
+  ExternalLink,
+  Check,
 } from 'lucide-react'
 
 export interface LessonItem {
@@ -29,6 +35,7 @@ export interface LessonItem {
   title: string | null
   studied: boolean
   studiedAt: string | null
+  evidenceUrl?: string | null
 }
 
 export interface StatusHistoryItem {
@@ -70,6 +77,185 @@ interface TermChecklistClientProps {
   initialLessons: LessonItem[]
   history: StatusHistoryItem[]
   observations?: ObservationItem[]
+}
+
+interface LessonEvidenceFieldProps {
+  termId: number
+  lessonId: number
+  initialUrl: string | null
+  isEditable: boolean
+  onUpdated: (newUrl: string | null) => void
+}
+
+function LessonEvidenceField({
+  termId,
+  lessonId,
+  initialUrl,
+  isEditable,
+  onUpdated,
+}: LessonEvidenceFieldProps) {
+  const [val, setVal] = useState(initialUrl || '')
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    setVal(initialUrl || '')
+  }, [initialUrl])
+
+  const handleSave = async (rawValue: string) => {
+    const trimmed = rawValue.trim()
+    const currentStored = initialUrl?.trim() || ''
+
+    if (trimmed === currentStored && status !== 'error') {
+      return
+    }
+
+    setErrorMessage(null)
+
+    if (trimmed === '') {
+      setStatus('saving')
+      const res = await updateLessonEvidenceAction(termId, lessonId, null)
+      if (res.error) {
+        setStatus('error')
+        setErrorMessage(res.error)
+      } else {
+        setStatus('saved')
+        setVal('')
+        onUpdated(null)
+        setTimeout(() => setStatus('idle'), 2000)
+      }
+      return
+    }
+
+    if (trimmed.length > 500) {
+      setStatus('error')
+      setErrorMessage('Link maksimal 500 karakter.')
+      return
+    }
+
+    if (/\s/.test(trimmed)) {
+      setStatus('error')
+      setErrorMessage('Link tidak boleh mengandung spasi.')
+      return
+    }
+
+    if (!/^https?:\/\//i.test(trimmed)) {
+      setStatus('error')
+      setErrorMessage('Link harus diawali http:// atau https://')
+      return
+    }
+
+    setStatus('saving')
+    const res = await updateLessonEvidenceAction(termId, lessonId, trimmed)
+    if (res.error) {
+      setStatus('error')
+      setErrorMessage(res.error)
+    } else {
+      setStatus('saved')
+      setVal(trimmed)
+      onUpdated(trimmed)
+      setTimeout(() => setStatus('idle'), 2000)
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      e.currentTarget.blur()
+    }
+  }
+
+  if (!isEditable) {
+    if (initialUrl && isValidHttpUrl(initialUrl)) {
+      return (
+        <div className="flex items-center gap-1.5 text-xs">
+          <span className="text-slate-400 text-[11px] font-medium">Link:</span>
+          <a
+            href={initialUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline max-w-[200px] sm:max-w-xs truncate"
+            title={initialUrl}
+          >
+            <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">{initialUrl}</span>
+          </a>
+        </div>
+      )
+    } else if (initialUrl) {
+      return (
+        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+          <span className="text-slate-400 text-[11px] font-medium">Link:</span>
+          <span className="truncate max-w-[200px]">{initialUrl}</span>
+        </div>
+      )
+    }
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-slate-400">
+        <span className="text-[11px] font-medium">Link:</span>
+        <span className="font-mono">-</span>
+      </div>
+    )
+  }
+
+  const hasValidLink = val && isValidHttpUrl(val)
+
+  return (
+    <div className="w-full sm:w-auto flex-1 max-w-sm">
+      <div className="flex items-center gap-1.5">
+        <div className="relative flex-1 min-w-[160px]">
+          <input
+            type="text"
+            value={val}
+            onChange={(e) => {
+              setVal(e.target.value)
+              if (errorMessage) setErrorMessage(null)
+            }}
+            onBlur={() => handleSave(val)}
+            onKeyDown={handleKeyDown}
+            disabled={status === 'saving'}
+            placeholder="Tempel link bukti (opsional)"
+            className={`w-full px-3 py-1.5 text-xs rounded-lg border bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none transition-colors ${
+              errorMessage
+                ? 'border-rose-400 dark:border-rose-600 focus:ring-1 focus:ring-rose-500'
+                : 'border-slate-200 dark:border-slate-700 focus:border-indigo-500 dark:focus:border-indigo-400 focus:ring-1 focus:ring-indigo-500/30'
+            }`}
+          />
+          {status === 'saving' && (
+            <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />
+            </div>
+          )}
+        </div>
+
+        {hasValidLink && (
+          <a
+            href={val}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 dark:text-indigo-300 transition-colors shrink-0 cursor-pointer shadow-2xs"
+            title="Buka link di tab baru"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span>Buka</span>
+          </a>
+        )}
+      </div>
+
+      {status === 'saved' && (
+        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 mt-1 animate-in fade-in">
+          <Check className="w-3 h-3" />
+          <span>Tersimpan</span>
+        </span>
+      )}
+
+      {errorMessage && (
+        <span className="block text-[11px] text-rose-600 dark:text-rose-400 mt-1 animate-in fade-in">
+          {errorMessage}
+        </span>
+      )}
+    </div>
+  )
 }
 
 export function TermChecklistClient({
@@ -146,6 +332,12 @@ export function TermChecklistClient({
         )
       )
     }
+  }
+
+  const handleEvidenceUpdated = (lessonId: number, newUrl: string | null) => {
+    setLessons((prev) =>
+      prev.map((l) => (l.id === lessonId ? { ...l, evidenceUrl: newUrl } : l))
+    )
   }
 
   const handleConfirmReadyForCheck = () => {
@@ -310,26 +502,26 @@ export function TermChecklistClient({
           )}
         </div>
 
-        <div className="space-y-2.5">
+        <div className="space-y-3">
           {optimisticLessons.map((lesson) => {
             const isTogglingThis = togglingLessonId === lesson.id
 
             return (
-              <label
+              <div
                 key={lesson.id}
-                htmlFor={`lesson-checkbox-${lesson.id}`}
-                className={`flex items-center justify-between p-3.5 sm:p-4 rounded-xl border transition-all ${
+                className={`flex flex-col md:flex-row md:items-center justify-between gap-3 p-3.5 sm:p-4 rounded-xl border transition-all ${
                   lesson.studied
                     ? 'bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/40 text-slate-900 dark:text-white'
                     : 'bg-slate-50/40 dark:bg-slate-800/20 border-slate-200/80 dark:border-slate-800 text-slate-700 dark:text-slate-300'
                 } ${
                   isEditable
-                    ? 'cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-700 hover:shadow-xs'
-                    : 'cursor-not-allowed opacity-80'
+                    ? 'hover:border-indigo-300 dark:hover:border-indigo-700 hover:shadow-xs'
+                    : 'opacity-85'
                 }`}
               >
-                <div className="flex items-center gap-3.5">
-                  <div className="relative flex items-center justify-center">
+                {/* Checkbox and title */}
+                <div className="flex items-center gap-3.5 min-w-[220px]">
+                  <div className="relative flex items-center justify-center shrink-0">
                     <input
                       id={`lesson-checkbox-${lesson.id}`}
                       type="checkbox"
@@ -339,21 +531,38 @@ export function TermChecklistClient({
                       className="w-5 h-5 rounded-md text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:cursor-not-allowed border-slate-300 dark:border-slate-600"
                     />
                     {isTogglingThis && (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600 absolute" />
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600 absolute pointer-events-none" />
                     )}
                   </div>
 
                   <div>
-                    <span className="text-sm font-semibold block">
+                    <label
+                      htmlFor={`lesson-checkbox-${lesson.id}`}
+                      className={`text-sm font-semibold block select-none ${
+                        isEditable ? 'cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400' : ''
+                      }`}
+                    >
                       Lesson {lesson.lessonNumber}: {lesson.title || `Materi Lesson ${lesson.lessonNumber}`}
-                    </span>
-                    <span className="text-xs text-slate-400">
+                    </label>
+                    <span className="text-xs text-slate-400 block">
                       {lesson.studied ? 'Sudah dipelajari mandiri' : 'Belum dipelajari'}
                     </span>
                   </div>
                 </div>
 
-                <div>
+                {/* Evidence link input / view */}
+                <div className="flex-1 max-w-md w-full pl-8 md:pl-0">
+                  <LessonEvidenceField
+                    termId={term.id}
+                    lessonId={lesson.id}
+                    initialUrl={lesson.evidenceUrl || null}
+                    isEditable={isEditable}
+                    onUpdated={(newUrl) => handleEvidenceUpdated(lesson.id, newUrl)}
+                  />
+                </div>
+
+                {/* Studied completion badge */}
+                <div className="shrink-0 self-end md:self-center pl-8 md:pl-0">
                   {lesson.studied && lesson.studiedAt ? (
                     <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-mono bg-emerald-100/60 dark:bg-emerald-950/60 px-2.5 py-1 rounded-lg">
                       Selesai:{' '}
@@ -366,9 +575,15 @@ export function TermChecklistClient({
                     <span className="text-xs text-slate-400 italic">Belum Selesai</span>
                   )}
                 </div>
-              </label>
+              </div>
             )
           })}
+        </div>
+
+        {/* Reminder note below 10 lessons list */}
+        <div className="pt-2 text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 italic">
+          <HelpCircle className="w-4 h-4 text-slate-400 shrink-0" />
+          <span>Pastikan link bisa diakses trainer (atur akses ke &apos;siapa saja yang memiliki link&apos;).</span>
         </div>
 
         {/* Ready for Check Action Bar */}

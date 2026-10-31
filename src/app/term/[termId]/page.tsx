@@ -87,16 +87,20 @@ export default async function TraineeTermPage({ params }: PageProps) {
     const lessonIds = lessonsData.map((l) => l.id)
     const { data: studiedData } = await supabase
       .from('trainee_lessons')
-      .select('lesson_id, studied, studied_at')
+      .select('lesson_id, studied, studied_at, evidence_url')
       .eq('trainee_id', user.id)
       .in('lesson_id', lessonIds)
 
-    const studiedMap = new Map<number, { studied: boolean; studiedAt: string | null }>()
+    const studiedMap = new Map<
+      number,
+      { studied: boolean; studiedAt: string | null; evidenceUrl: string | null }
+    >()
     if (studiedData) {
       studiedData.forEach((s) => {
         studiedMap.set(s.lesson_id, {
           studied: s.studied,
           studiedAt: s.studied_at,
+          evidenceUrl: s.evidence_url,
         })
       })
     }
@@ -109,6 +113,7 @@ export default async function TraineeTermPage({ params }: PageProps) {
         title: l.title,
         studied: studiedInfo?.studied || false,
         studiedAt: studiedInfo?.studiedAt || null,
+        evidenceUrl: studiedInfo?.evidenceUrl || null,
       }
     })
 

@@ -613,15 +613,15 @@ export async function getTraineeAssignedTermsAction(
 
     const traineeTermIds = ttData.map((tt) => tt.id)
 
-    // 2. Fetch studied lessons for this trainee
-    const { data: studiedLessonsData } = await supabase
+    // 2. Fetch lessons with progress for this trainee (studied = true OR evidence_url is not null)
+    const { data: lessonProgressData } = await supabase
       .from('trainee_lessons')
-      .select('lesson_id, studied, lessons(term_id)')
+      .select('lesson_id, studied, evidence_url, lessons(term_id)')
       .eq('trainee_id', traineeId)
-      .eq('studied', true)
 
-    const studiedTermIdSet = new Set(
-      (studiedLessonsData || [])
+    const termWithLessonProgressSet = new Set(
+      (lessonProgressData || [])
+        .filter((l) => l.studied || (l.evidence_url !== null && l.evidence_url.trim().length > 0))
         .map((l) => (l.lessons as unknown as { term_id: number } | null)?.term_id)
         .filter((id): id is number => typeof id === 'number')
     )
@@ -644,12 +644,12 @@ export async function getTraineeAssignedTermsAction(
         sort_order: number
       } | null
 
-      const hasStudied = studiedTermIdSet.has(tt.term_id)
+      const hasLessonProgress = termWithLessonProgressSet.has(tt.term_id)
       const hasHistory = historyTtIdSet.has(tt.id)
       const hasProgress =
         tt.cleared_to_teach ||
         tt.status !== 'in_self_training' ||
-        hasStudied ||
+        hasLessonProgress ||
         hasHistory
 
       return {

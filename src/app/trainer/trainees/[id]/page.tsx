@@ -119,11 +119,12 @@ export default async function TraineeDetailPage({ params }: PageProps) {
       lesson_id: number
       studied: boolean
       studied_at: string | null
+      evidence_url: string | null
     }> = []
 
     const { data: tlData } = await supabase
       .from('trainee_lessons')
-      .select('lesson_id, studied, studied_at')
+      .select('lesson_id, studied, studied_at, evidence_url')
       .eq('trainee_id', traineeId)
 
     if (tlData) {
@@ -195,6 +196,7 @@ export default async function TraineeDetailPage({ params }: PageProps) {
           title: l.title,
           studied: studiedEntry?.studied || false,
           studiedAt: studiedEntry?.studied_at || null,
+          evidenceUrl: studiedEntry?.evidence_url || null,
         }
       })
 

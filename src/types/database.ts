@@ -136,6 +136,7 @@ export interface Database {
           lesson_id: number
           studied: boolean
           studied_at: string | null
+          evidence_url: string | null
         }
         Insert: {
           id?: number
@@ -143,6 +144,7 @@ export interface Database {
           lesson_id: number
           studied?: boolean
           studied_at?: string | null
+          evidence_url?: string | null
         }
         Update: {
           id?: number
@@ -150,6 +152,7 @@ export interface Database {
           lesson_id?: number
           studied?: boolean
           studied_at?: string | null
+          evidence_url?: string | null
         }
         Relationships: [
           {

@@ -11,7 +11,7 @@ import {
   changeTraineeBranchAction,
 } from '@/app/trainer/actions'
 import { ProgramLevel, TermStatus, ObservationResult } from '@/types/database'
-import { STATUS_LABELS, STATUS_STYLES, GOLD_BADGE_STYLE } from '@/lib/constants'
+import { STATUS_LABELS, STATUS_STYLES, GOLD_BADGE_STYLE, isValidHttpUrl } from '@/lib/constants'
 import { AssignTermModal, MasterTermItem } from '@/components/AssignTermModal'
 import {
   ArrowLeft,
@@ -41,6 +41,7 @@ import {
   Star,
   Building2,
   MapPin,
+  ExternalLink,
   Layers,
 } from 'lucide-react'
 
@@ -62,6 +63,7 @@ export interface TermDetail {
     title: string | null
     studied: boolean
     studiedAt: string | null
+    evidenceUrl: string | null
   }>
   history: Array<{
     id: number
@@ -148,9 +150,9 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
         t.traineeTerm?.status === 'ready_for_check' ||
         t.traineeTerm?.status === 'understanding_check'
     )?.termId ||
-      terms.find((t) => t.traineeTerm && t.traineeTerm.status !== 'ready_for_trial')?.termId ||
-      terms[0]?.termId ||
-      null
+    terms.find((t) => t.traineeTerm && t.traineeTerm.status !== 'ready_for_trial')?.termId ||
+    terms[0]?.termId ||
+    null
   )
 
   // Level tab state ('kinder' | 'junior')
@@ -527,11 +529,10 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
               type="button"
               disabled={isToggling}
               onClick={handleToggleActive}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
-                isActive
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${isActive
                   ? 'border-rose-200 dark:border-rose-800/60 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30'
                   : 'border-emerald-200 dark:border-emerald-800/60 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
-              }`}
+                }`}
             >
               {isToggling ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -624,11 +625,10 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
               <button
                 type="button"
                 onClick={() => setLevelTab('kinder')}
-                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 ${
-                  levelTab === 'kinder'
+                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 ${levelTab === 'kinder'
                     ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                }`}
+                  }`}
               >
                 <span>Kinder Level ({kinderTerms.length} Term)</span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 font-mono">
@@ -642,11 +642,10 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
               <button
                 type="button"
                 onClick={() => setLevelTab('junior')}
-                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 ${
-                  levelTab === 'junior'
+                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 ${levelTab === 'junior'
                     ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                }`}
+                  }`}
               >
                 <span>Junior Level ({juniorTerms.length} Term)</span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 font-mono">
@@ -694,498 +693,534 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
             </div>
           ) : (
             activeLevelTerms.map((term) => {
-          const isExpanded = expandedTermId === term.termId
-          const status = term.traineeTerm?.status || 'in_self_training'
-          const statusStyle = STATUS_STYLES[status]
-          const studiedCount = term.lessons.filter((l) => l.studied).length
-          const clearedToTeach = term.traineeTerm?.clearedToTeach
+              const isExpanded = expandedTermId === term.termId
+              const status = term.traineeTerm?.status || 'in_self_training'
+              const statusStyle = STATUS_STYLES[status]
+              const studiedCount = term.lessons.filter((l) => l.studied).length
+              const clearedToTeach = term.traineeTerm?.clearedToTeach
 
-          return (
-            <div
-              key={term.termId}
-              className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs transition-all"
-            >
-              {/* Term Header Bar (Clickable) */}
-              <div
-                onClick={() => setExpandedTermId(isExpanded ? null : term.termId)}
-                className="p-4 sm:p-5 flex items-center justify-between gap-3 cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-800/30"
-              >
-                <div className="flex items-center gap-3">
-                  {/* Status Indicator Icon */}
+              return (
+                <div
+                  key={term.termId}
+                  className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs transition-all"
+                >
+                  {/* Term Header Bar (Clickable) */}
                   <div
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${
-                      status === 'ready_for_trial'
-                        ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400'
-                        : 'bg-indigo-100 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400'
-                    }`}
+                    onClick={() => setExpandedTermId(isExpanded ? null : term.termId)}
+                    className="p-4 sm:p-5 flex items-center justify-between gap-3 cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-800/30"
                   >
-                    {status === 'ready_for_trial' ? (
-                      <CheckCircle2 className="w-5 h-5" />
-                    ) : (
-                      <span>{term.sortOrder}</span>
-                    )}
-                  </div>
-
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white">
-                        <span className="capitalize">{term.level}</span> · {term.name}
-                      </h3>
-
-                      {/* Status badge */}
-                      {statusStyle && (
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border}`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
-                          <span>{STATUS_LABELS[status]}</span>
-                        </span>
-                      )}
-
-                      {/* Ready for Check attention tag */}
-                      {status === 'ready_for_check' && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white shadow-xs animate-pulse">
-                          <Sparkles className="w-3 h-3" />
-                          <span>Perlu Diverifikasi</span>
-                        </span>
-                      )}
-
-                      {/* Understanding check in-progress tag */}
-                      {status === 'understanding_check' && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-500 text-white shadow-xs">
-                          <PlayCircle className="w-3 h-3" />
-                          <span>Sedang Dicek</span>
-                        </span>
-                      )}
-
-                      {/* Layak Mengajar Badge */}
-                      {clearedToTeach && (
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${GOLD_BADGE_STYLE.bg}`}
-                        >
-                          <Award className="w-3 h-3 text-amber-500" />
-                          <span>Layak Mengajar</span>
-                        </span>
-                      )}
-                    </div>
-
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      {studiedCount} dari 10 lesson tercentang
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <div className="hidden sm:block text-right">
-                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      {studiedCount}/10
-                    </span>
-                  </div>
-
-                  <div className="text-slate-400">
-                    {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                  </div>
-                </div>
-              </div>
-
-              {/* Expanded content: Lessons & History */}
-              {isExpanded && (
-                <div className="px-4 pb-5 sm:px-5 pt-3 border-t border-slate-100 dark:border-slate-800 space-y-5 animate-in fade-in duration-150">
-                  {/* TRAINER VERIFICATION PANEL */}
-                  {status === 'ready_for_check' && (
-                    <div className="p-4 sm:p-5 rounded-2xl bg-amber-500/10 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/70 space-y-3">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div className="flex items-start gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm">
-                            <Sparkles className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <h4 className="font-bold text-sm text-amber-900 dark:text-amber-200">
-                              Trainee Mengajukan Ready for Check
-                            </h4>
-                            <p className="text-xs text-amber-800/90 dark:text-amber-300/80 mt-0.5">
-                              Seluruh 10 lesson telah diselesaikan secara mandiri. Silakan jadwalkan sesi evaluasi dan klik tombol di samping untuk memulai Understanding Check.
-                            </p>
-                          </div>
-                        </div>
-
-                        <button
-                          id={`btn-start-check-term-${term.termId}`}
-                          type="button"
-                          onClick={() => {
-                            setActiveStatusModal({
-                              action: 'start_check',
-                              traineeTermId: term.traineeTerm!.id,
-                              termName: term.name,
-                              sortOrder: term.sortOrder,
-                            })
-                            setStatusNote('')
-                            setActionError(null)
-                          }}
-                          className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold tracking-wide shadow-md hover:shadow-amber-500/25 transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer"
-                        >
-                          <PlayCircle className="w-4 h-4" />
-                          <span>Mulai Understanding Check</span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {status === 'understanding_check' && (
-                    <div className="p-4 sm:p-5 rounded-2xl bg-sky-500/10 dark:bg-sky-950/40 border border-sky-300 dark:border-sky-700/70 space-y-3">
-                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                        <div className="flex items-start gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-sky-500 text-white flex items-center justify-center shrink-0 shadow-sm">
-                            <PlayCircle className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <h4 className="font-bold text-sm text-sky-900 dark:text-sky-200">
-                              Sesi Understanding Check Sedang Berlangsung
-                            </h4>
-                            <p className="text-xs text-sky-800/90 dark:text-sky-300/80 mt-0.5">
-                              Lakukan tanya jawab pemahaman materi {term.name}. Setelah sesi selesai, tentukan keputusan:
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 flex-wrap">
-                          {/* Need Review Button */}
-                          <button
-                            id={`btn-need-review-term-${term.termId}`}
-                            type="button"
-                            onClick={() => {
-                              setActiveStatusModal({
-                                action: 'need_review',
-                                traineeTermId: term.traineeTerm!.id,
-                                termName: term.name,
-                                sortOrder: term.sortOrder,
-                              })
-                              setStatusNote('')
-                              setActionError(null)
-                            }}
-                            className="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-700/80 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-bold tracking-wide transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
-                          >
-                            <RotateCcw className="w-4 h-4" />
-                            <span>Need Review</span>
-                          </button>
-
-                          {/* Ready for Trial Class Button */}
-                          <button
-                            id={`btn-ready-for-trial-term-${term.termId}`}
-                            type="button"
-                            onClick={() => {
-                              setActiveStatusModal({
-                                action: 'ready_for_trial',
-                                traineeTermId: term.traineeTerm!.id,
-                                termName: term.name,
-                                sortOrder: term.sortOrder,
-                              })
-                              setStatusNote('')
-                              setActionError(null)
-                            }}
-                            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold tracking-wide shadow-md hover:shadow-emerald-600/25 transition-all flex items-center gap-1.5 cursor-pointer"
-                          >
-                            <CheckCircle2 className="w-4 h-4" />
-                            <span>Ready for Trial Class</span>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {status === 'ready_for_trial' && (
-                    <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-emerald-400/5 to-teal-500/10 border border-emerald-300 dark:border-emerald-700/60 space-y-3">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div className="flex items-start gap-3">
-                          <div
-                            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${
-                              clearedToTeach ? 'bg-amber-500 text-white' : 'bg-emerald-600 text-white'
-                            }`}
-                          >
-                            {clearedToTeach ? (
-                              <Award className="w-5 h-5" />
-                            ) : (
-                              <GraduationCap className="w-5 h-5" />
-                            )}
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h4 className="font-bold text-sm text-slate-900 dark:text-white">
-                                {clearedToTeach
-                                  ? 'Telah Layak Mengajar (Cleared to Teach)'
-                                  : 'Term Selesai: Siap Observasi Mengajar (Trial Class)'}
-                              </h4>
-                              {clearedToTeach && (
-                                <span
-                                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${GOLD_BADGE_STYLE.bg}`}
-                                >
-                                  <Award className="w-3 h-3 text-amber-500" />
-                                  <span>Layak Mengajar</span>
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
-                              {clearedToTeach
-                                ? 'Trainee telah lulus sesi observasi sebagai Main Teacher dan memegang predikat Layak Mengajar untuk term ini.'
-                                : 'Trainee telah menyelesaikan materi mandiri & understanding check. Lakukan sesi observasi saat trainee menjadi Main Teacher di kelas.'}
-                            </p>
-                          </div>
-                        </div>
-
-                        <button
-                          id={`btn-open-observation-term-${term.termId}`}
-                          type="button"
-                          onClick={() =>
-                            handleOpenObservationModal(term.termId, term.name, term.sortOrder)
-                          }
-                          className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold tracking-wide shadow-md hover:shadow-amber-500/25 transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer"
-                        >
-                          <Award className="w-4 h-4" />
-                          <span>{clearedToTeach ? 'Input Observasi Baru' : 'Input Sesi Observasi'}</span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {status === 'in_self_training' && term.history.length > 0 && term.history[0].toStatus === 'need_review' && (
-                    <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/60 text-xs text-rose-800 dark:text-rose-300 space-y-1">
-                      <div className="flex items-center gap-2 font-bold text-rose-900 dark:text-rose-200">
-                        <RotateCcw className="w-4 h-4 text-rose-600 shrink-0" />
-                        <span>Catatan Need Review Terakhir untuk Trainee:</span>
-                      </div>
-                      <p className="italic pl-6">&ldquo;{term.history[0].note}&rdquo;</p>
-                      <p className="text-[11px] text-rose-600 dark:text-rose-400 pl-6">
-                        Trainee sedang mempelajari ulang materi berdasarkan evaluasi di atas ({studiedCount}/10 lesson selesai).
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Read-only Lesson Checklist */}
-                  <div>
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5">
-                      Ceklis Lesson (Read-Only)
-                    </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                      {term.lessons.map((lesson) => (
-                        <div
-                          key={lesson.id}
-                          className={`flex items-center justify-between p-2.5 rounded-xl border ${
-                            lesson.studied
-                              ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/40 text-slate-800 dark:text-slate-200'
-                              : 'bg-slate-50/50 dark:bg-slate-800/20 border-slate-200/60 dark:border-slate-800/60 text-slate-400'
+                    <div className="flex items-center gap-3">
+                      {/* Status Indicator Icon */}
+                      <div
+                        className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${status === 'ready_for_trial'
+                            ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400'
+                            : 'bg-indigo-100 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400'
                           }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <input
-                              type="checkbox"
-                              readOnly
-                              checked={lesson.studied}
-                              className="rounded text-emerald-600 focus:ring-emerald-500 pointer-events-none"
-                            />
-                            <span className="font-medium">
-                              Lesson {lesson.lessonNumber}: {lesson.title || `Lesson ${lesson.lessonNumber}`}
-                            </span>
-                          </div>
-
-                          {lesson.studied && lesson.studiedAt ? (
-                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">
-                              {new Date(lesson.studiedAt).toLocaleDateString('id-ID', {
-                                month: 'short',
-                                day: 'numeric',
-                              })}
-                            </span>
-                          ) : (
-                            <span className="text-[10px] text-slate-400 italic">Belum</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Status History (if any) */}
-                  {term.history.length > 0 && (
-                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
-                      <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
-                        Riwayat Perubahan Status
-                      </h4>
-                      <div className="space-y-2">
-                        {term.history.map((h) => (
-                          <div
-                            key={h.id}
-                            className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 text-xs border border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-1"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold text-slate-700 dark:text-slate-300">
-                                {STATUS_LABELS[h.toStatus as TermStatus] || h.toStatus}
-                              </span>
-                              {h.note && (
-                                <span className="text-slate-500 italic">
-                                  &ldquo;{h.note}&rdquo;
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-[10px] text-slate-400 font-mono">
-                              Oleh {h.changedByName} •{' '}
-                              {new Date(h.changedAt).toLocaleString('id-ID', {
-                                dateStyle: 'medium',
-                                timeStyle: 'short',
-                              })}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Observation Sessions for this term */}
-                  {(term.observations.length > 0 || status === 'ready_for_trial') && (
-                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <div>
-                          <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                            Hasil Sesi Observasi Mengajar
-                          </h4>
-                          <p className="text-[11px] text-slate-400">
-                            Evaluasi 5 kriteria saat trainee menjadi Main Teacher di kelas.
-                          </p>
-                        </div>
-
-                        {status === 'ready_for_trial' && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleOpenObservationModal(term.termId, term.name, term.sortOrder)
-                            }
-                            className="px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 hover:bg-amber-100 text-amber-800 dark:text-amber-300 text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
-                          >
-                            <Award className="w-3.5 h-3.5 text-amber-500" />
-                            <span>+ Input Observasi</span>
-                          </button>
+                      >
+                        {status === 'ready_for_trial' ? (
+                          <CheckCircle2 className="w-5 h-5" />
+                        ) : (
+                          <span>{term.sortOrder}</span>
                         )}
                       </div>
 
-                      {term.observations.length === 0 ? (
-                        <div className="p-4 rounded-xl bg-slate-50/70 dark:bg-slate-800/30 border border-dashed border-slate-200 dark:border-slate-700 text-center space-y-2">
-                          <p className="text-xs text-slate-500 dark:text-slate-400">
-                            Belum ada sesi observasi yang diinput untuk term ini.
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleOpenObservationModal(term.termId, term.name, term.sortOrder)
-                            }
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-all shadow-xs"
-                          >
-                            <Award className="w-3.5 h-3.5" />
-                            <span>Mulai Penilaian Observasi</span>
-                          </button>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white">
+                            <span className="capitalize">{term.level}</span> · {term.name}
+                          </h3>
+
+                          {/* Status badge */}
+                          {statusStyle && (
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border}`}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
+                              <span>{STATUS_LABELS[status]}</span>
+                            </span>
+                          )}
+
+                          {/* Ready for Check attention tag */}
+                          {status === 'ready_for_check' && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white shadow-xs animate-pulse">
+                              <Sparkles className="w-3 h-3" />
+                              <span>Perlu Diverifikasi</span>
+                            </span>
+                          )}
+
+                          {/* Understanding check in-progress tag */}
+                          {status === 'understanding_check' && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-500 text-white shadow-xs">
+                              <PlayCircle className="w-3 h-3" />
+                              <span>Sedang Dicek</span>
+                            </span>
+                          )}
+
+                          {/* Layak Mengajar Badge */}
+                          {clearedToTeach && (
+                            <span
+                              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${GOLD_BADGE_STYLE.bg}`}
+                            >
+                              <Award className="w-3 h-3 text-amber-500" />
+                              <span>Layak Mengajar</span>
+                            </span>
+                          )}
                         </div>
-                      ) : (
-                        <div className="space-y-3">
-                          {term.observations.map((obs) => {
-                            const avgScore = (
-                              (obs.scorePreparation +
-                                obs.scoreDelivery +
-                                obs.scoreMastery +
-                                obs.scoreVisual +
-                                obs.scoreEngagement) /
-                              5
-                            ).toFixed(1)
 
-                            return (
-                              <div
-                                key={obs.id}
-                                className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 text-xs border border-slate-200/80 dark:border-slate-700/80 space-y-2.5"
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          {studiedCount} dari 10 lesson tercentang
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="hidden sm:block text-right">
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          {studiedCount}/10
+                        </span>
+                      </div>
+
+                      <div className="text-slate-400">
+                        {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Expanded content: Lessons & History */}
+                  {isExpanded && (
+                    <div className="px-4 pb-5 sm:px-5 pt-3 border-t border-slate-100 dark:border-slate-800 space-y-5 animate-in fade-in duration-150">
+                      {/* TRAINER VERIFICATION PANEL */}
+                      {status === 'ready_for_check' && (
+                        <div className="p-4 sm:p-5 rounded-2xl bg-amber-500/10 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/70 space-y-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="flex items-start gap-3">
+                              <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                                <Sparkles className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <h4 className="font-bold text-sm text-amber-900 dark:text-amber-200">
+                                  Trainee Mengajukan Ready for Check
+                                </h4>
+                                <p className="text-xs text-amber-800/90 dark:text-amber-300/80 mt-0.5">
+                                  Seluruh 10 lesson telah diselesaikan secara mandiri. Silakan jadwalkan sesi evaluasi dan klik tombol di samping untuk memulai Understanding Check.
+                                </p>
+                              </div>
+                            </div>
+
+                            <button
+                              id={`btn-start-check-term-${term.termId}`}
+                              type="button"
+                              onClick={() => {
+                                setActiveStatusModal({
+                                  action: 'start_check',
+                                  traineeTermId: term.traineeTerm!.id,
+                                  termName: term.name,
+                                  sortOrder: term.sortOrder,
+                                })
+                                setStatusNote('')
+                                setActionError(null)
+                              }}
+                              className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold tracking-wide shadow-md hover:shadow-amber-500/25 transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+                            >
+                              <PlayCircle className="w-4 h-4" />
+                              <span>Mulai Understanding Check</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {status === 'understanding_check' && (
+                        <div className="p-4 sm:p-5 rounded-2xl bg-sky-500/10 dark:bg-sky-950/40 border border-sky-300 dark:border-sky-700/70 space-y-3">
+                          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                            <div className="flex items-start gap-3">
+                              <div className="w-10 h-10 rounded-xl bg-sky-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                                <PlayCircle className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <h4 className="font-bold text-sm text-sky-900 dark:text-sky-200">
+                                  Sesi Understanding Check Sedang Berlangsung
+                                </h4>
+                                <p className="text-xs text-sky-800/90 dark:text-sky-300/80 mt-0.5">
+                                  Lakukan tanya jawab pemahaman materi {term.name}. Setelah sesi selesai, tentukan keputusan:
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 flex-wrap">
+                              {/* Need Review Button */}
+                              <button
+                                id={`btn-need-review-term-${term.termId}`}
+                                type="button"
+                                onClick={() => {
+                                  setActiveStatusModal({
+                                    action: 'need_review',
+                                    traineeTermId: term.traineeTerm!.id,
+                                    termName: term.name,
+                                    sortOrder: term.sortOrder,
+                                  })
+                                  setStatusNote('')
+                                  setActionError(null)
+                                }}
+                                className="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-700/80 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-bold tracking-wide transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
                               >
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span
-                                      className={`px-2.5 py-0.5 rounded-full font-bold uppercase text-[10px] tracking-wide border ${
-                                        obs.result === 'pass'
-                                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700'
-                                          : 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-700'
-                                      }`}
-                                    >
-                                      {obs.result === 'pass'
-                                        ? 'Lulus (Pass) — Layak Mengajar'
-                                        : 'Ulang (Retry)'}
-                                    </span>
-                                    <span className="font-semibold text-slate-800 dark:text-slate-200">
-                                      Tanggal: {obs.sessionDate}
-                                    </span>
-                                    <span className="text-[11px] text-slate-400">
-                                      oleh {obs.trainerName}
-                                    </span>
-                                  </div>
+                                <RotateCcw className="w-4 h-4" />
+                                <span>Need Review</span>
+                              </button>
 
-                                  <div className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-bold text-xs bg-amber-50 dark:bg-amber-950/40 px-2.5 py-0.5 rounded-full border border-amber-200 dark:border-amber-800/60 self-start sm:self-auto">
-                                    <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
-                                    <span>Rata-rata: {avgScore} / 5.0</span>
-                                  </div>
-                                </div>
+                              {/* Ready for Trial Class Button */}
+                              <button
+                                id={`btn-ready-for-trial-term-${term.termId}`}
+                                type="button"
+                                onClick={() => {
+                                  setActiveStatusModal({
+                                    action: 'ready_for_trial',
+                                    traineeTermId: term.traineeTerm!.id,
+                                    termName: term.name,
+                                    sortOrder: term.sortOrder,
+                                  })
+                                  setStatusNote('')
+                                  setActionError(null)
+                                }}
+                                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold tracking-wide shadow-md hover:shadow-emerald-600/25 transition-all flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <CheckCircle2 className="w-4 h-4" />
+                                <span>Ready for Trial Class</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
-                                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[11px] p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-300">
-                                  <div>
-                                    <span className="text-slate-400 block text-[10px]">
-                                      Persiapan:
-                                    </span>
-                                    <span className="font-bold text-xs">
-                                      {obs.scorePreparation} / 5
-                                    </span>
-                                  </div>
-                                  <div>
-                                    <span className="text-slate-400 block text-[10px]">
-                                      Penyampaian:
-                                    </span>
-                                    <span className="font-bold text-xs">
-                                      {obs.scoreDelivery} / 5
-                                    </span>
-                                  </div>
-                                  <div>
-                                    <span className="text-slate-400 block text-[10px]">
-                                      Penguasaan:
-                                    </span>
-                                    <span className="font-bold text-xs">{obs.scoreMastery} / 5</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-slate-400 block text-[10px]">
-                                      Visual &amp; Media:
-                                    </span>
-                                    <span className="font-bold text-xs">{obs.scoreVisual} / 5</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-slate-400 block text-[10px]">
-                                      Interaksi:
-                                    </span>
-                                    <span className="font-bold text-xs">
-                                      {obs.scoreEngagement} / 5
-                                    </span>
-                                  </div>
-                                </div>
-
-                                {obs.notes && (
-                                  <div className="p-2.5 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 text-slate-600 dark:text-slate-300 text-xs">
-                                    <span className="font-semibold text-amber-900 dark:text-amber-200 block text-[10px] uppercase tracking-wider mb-0.5">
-                                      Catatan Trainer:
-                                    </span>
-                                    <p className="italic">&ldquo;{obs.notes}&rdquo;</p>
-                                  </div>
+                      {status === 'ready_for_trial' && (
+                        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-emerald-400/5 to-teal-500/10 border border-emerald-300 dark:border-emerald-700/60 space-y-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="flex items-start gap-3">
+                              <div
+                                className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${clearedToTeach ? 'bg-amber-500 text-white' : 'bg-emerald-600 text-white'
+                                  }`}
+                              >
+                                {clearedToTeach ? (
+                                  <Award className="w-5 h-5" />
+                                ) : (
+                                  <GraduationCap className="w-5 h-5" />
                                 )}
                               </div>
-                            )
-                          })}
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h4 className="font-bold text-sm text-slate-900 dark:text-white">
+                                    {clearedToTeach
+                                      ? 'Telah Layak Mengajar (Cleared to Teach)'
+                                      : 'Term Selesai: Siap Observasi Mengajar (Trial Class)'}
+                                  </h4>
+                                  {clearedToTeach && (
+                                    <span
+                                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${GOLD_BADGE_STYLE.bg}`}
+                                    >
+                                      <Award className="w-3 h-3 text-amber-500" />
+                                      <span>Layak Mengajar</span>
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                                  {clearedToTeach
+                                    ? 'Trainee telah lulus sesi observasi sebagai Main Teacher dan memegang predikat Layak Mengajar untuk term ini.'
+                                    : 'Trainee telah menyelesaikan materi mandiri & understanding check. Lakukan sesi observasi saat trainee menjadi Main Teacher di kelas.'}
+                                </p>
+                              </div>
+                            </div>
+
+                            <button
+                              id={`btn-open-observation-term-${term.termId}`}
+                              type="button"
+                              onClick={() =>
+                                handleOpenObservationModal(term.termId, term.name, term.sortOrder)
+                              }
+                              className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold tracking-wide shadow-md hover:shadow-amber-500/25 transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+                            >
+                              <Award className="w-4 h-4" />
+                              <span>{clearedToTeach ? 'Input Observasi Baru' : 'Input Sesi Observasi'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {status === 'in_self_training' && term.history.length > 0 && term.history[0].toStatus === 'need_review' && (
+                        <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/60 text-xs text-rose-800 dark:text-rose-300 space-y-1">
+                          <div className="flex items-center gap-2 font-bold text-rose-900 dark:text-rose-200">
+                            <RotateCcw className="w-4 h-4 text-rose-600 shrink-0" />
+                            <span>Catatan Need Review Terakhir untuk Trainee:</span>
+                          </div>
+                          <p className="italic pl-6">&ldquo;{term.history[0].note}&rdquo;</p>
+                          <p className="text-[11px] text-rose-600 dark:text-rose-400 pl-6">
+                            Trainee sedang mempelajari ulang materi berdasarkan evaluasi di atas ({studiedCount}/10 lesson selesai).
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Read-only Lesson Checklist & Evidence Links */}
+                      <div>
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 mb-2.5">
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            Ceklis 10 Lesson & Link Bukti
+                          </h4>
+                          {status === 'understanding_check' && (
+                            <span className="text-[11px] font-medium text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 px-2.5 py-0.5 rounded-full self-start sm:self-auto">
+                              Tinjau link bukti di bawah untuk penilaian
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 text-xs">
+                          {term.lessons.map((lesson) => (
+                            <div
+                              key={lesson.id}
+                              className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-xl border ${
+                                lesson.studied
+                                  ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/40 text-slate-800 dark:text-slate-200'
+                                  : 'bg-slate-50/50 dark:bg-slate-800/20 border-slate-200/60 dark:border-slate-800/60 text-slate-500 dark:text-slate-400'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <input
+                                  type="checkbox"
+                                  readOnly
+                                  checked={lesson.studied}
+                                  className="rounded text-emerald-600 focus:ring-emerald-500 pointer-events-none w-4 h-4 shrink-0"
+                                />
+                                <span className="font-medium truncate">
+                                  Lesson {lesson.lessonNumber}: {lesson.title || `Lesson ${lesson.lessonNumber}`}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-2.5 self-end sm:self-auto shrink-0 pl-6 sm:pl-0">
+                                <div className="flex items-center gap-1 text-[11px]">
+                                  <span className="text-slate-400 font-medium">Bukti:</span>
+                                  {lesson.evidenceUrl ? (
+                                    isValidHttpUrl(lesson.evidenceUrl) ? (
+                                      <a
+                                        href={lesson.evidenceUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1 font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 hover:underline transition-colors"
+                                        title={lesson.evidenceUrl}
+                                      >
+                                        <ExternalLink className="w-3 h-3 shrink-0" />
+                                        <span>Buka Link</span>
+                                      </a>
+                                    ) : (
+                                      <span
+                                        className="text-slate-600 dark:text-slate-300 max-w-[120px] truncate"
+                                        title={lesson.evidenceUrl}
+                                      >
+                                        {lesson.evidenceUrl}
+                                      </span>
+                                    )
+                                  ) : (
+                                    <span className="text-slate-400 font-mono">-</span>
+                                  )}
+                                </div>
+
+                                <div className="border-l border-slate-200 dark:border-slate-700 pl-2">
+                                  {lesson.studied && lesson.studiedAt ? (
+                                    <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-mono">
+                                      {new Date(lesson.studiedAt).toLocaleDateString('id-ID', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                      })}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-400 italic">Belum</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Status History (if any) */}
+                      {term.history.length > 0 && (
+                        <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+                            Riwayat Perubahan Status
+                          </h4>
+                          <div className="space-y-2">
+                            {term.history.map((h) => (
+                              <div
+                                key={h.id}
+                                className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 text-xs border border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-1"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                    {STATUS_LABELS[h.toStatus as TermStatus] || h.toStatus}
+                                  </span>
+                                  {h.note && (
+                                    <span className="text-slate-500 italic">
+                                      &ldquo;{h.note}&rdquo;
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  Oleh {h.changedByName} •{' '}
+                                  {new Date(h.changedAt).toLocaleString('id-ID', {
+                                    dateStyle: 'medium',
+                                    timeStyle: 'short',
+                                  })}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Observation Sessions for this term */}
+                      {(term.observations.length > 0 || status === 'ready_for_trial') && (
+                        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                Hasil Sesi Observasi Mengajar
+                              </h4>
+                              <p className="text-[11px] text-slate-400">
+                                Evaluasi 5 kriteria saat trainee menjadi Main Teacher di kelas.
+                              </p>
+                            </div>
+
+                            {status === 'ready_for_trial' && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleOpenObservationModal(term.termId, term.name, term.sortOrder)
+                                }
+                                className="px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 hover:bg-amber-100 text-amber-800 dark:text-amber-300 text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <Award className="w-3.5 h-3.5 text-amber-500" />
+                                <span>+ Input Observasi</span>
+                              </button>
+                            )}
+                          </div>
+
+                          {term.observations.length === 0 ? (
+                            <div className="p-4 rounded-xl bg-slate-50/70 dark:bg-slate-800/30 border border-dashed border-slate-200 dark:border-slate-700 text-center space-y-2">
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                Belum ada sesi observasi yang diinput untuk term ini.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleOpenObservationModal(term.termId, term.name, term.sortOrder)
+                                }
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-all shadow-xs"
+                              >
+                                <Award className="w-3.5 h-3.5" />
+                                <span>Mulai Penilaian Observasi</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              {term.observations.map((obs) => {
+                                const avgScore = (
+                                  (obs.scorePreparation +
+                                    obs.scoreDelivery +
+                                    obs.scoreMastery +
+                                    obs.scoreVisual +
+                                    obs.scoreEngagement) /
+                                  5
+                                ).toFixed(1)
+
+                                return (
+                                  <div
+                                    key={obs.id}
+                                    className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 text-xs border border-slate-200/80 dark:border-slate-700/80 space-y-2.5"
+                                  >
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span
+                                          className={`px-2.5 py-0.5 rounded-full font-bold uppercase text-[10px] tracking-wide border ${obs.result === 'pass'
+                                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700'
+                                              : 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-700'
+                                            }`}
+                                        >
+                                          {obs.result === 'pass'
+                                            ? 'Lulus (Pass) — Layak Mengajar'
+                                            : 'Ulang (Retry)'}
+                                        </span>
+                                        <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                          Tanggal: {obs.sessionDate}
+                                        </span>
+                                        <span className="text-[11px] text-slate-400">
+                                          oleh {obs.trainerName}
+                                        </span>
+                                      </div>
+
+                                      <div className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-bold text-xs bg-amber-50 dark:bg-amber-950/40 px-2.5 py-0.5 rounded-full border border-amber-200 dark:border-amber-800/60 self-start sm:self-auto">
+                                        <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                                        <span>Rata-rata: {avgScore} / 5.0</span>
+                                      </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[11px] p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-300">
+                                      <div>
+                                        <span className="text-slate-400 block text-[10px]">
+                                          Persiapan:
+                                        </span>
+                                        <span className="font-bold text-xs">
+                                          {obs.scorePreparation} / 5
+                                        </span>
+                                      </div>
+                                      <div>
+                                        <span className="text-slate-400 block text-[10px]">
+                                          Penyampaian:
+                                        </span>
+                                        <span className="font-bold text-xs">
+                                          {obs.scoreDelivery} / 5
+                                        </span>
+                                      </div>
+                                      <div>
+                                        <span className="text-slate-400 block text-[10px]">
+                                          Penguasaan:
+                                        </span>
+                                        <span className="font-bold text-xs">{obs.scoreMastery} / 5</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-slate-400 block text-[10px]">
+                                          Visual &amp; Media:
+                                        </span>
+                                        <span className="font-bold text-xs">{obs.scoreVisual} / 5</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-slate-400 block text-[10px]">
+                                          Interaksi:
+                                        </span>
+                                        <span className="font-bold text-xs">
+                                          {obs.scoreEngagement} / 5
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    {obs.notes && (
+                                      <div className="p-2.5 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 text-slate-600 dark:text-slate-300 text-xs">
+                                        <span className="font-semibold text-amber-900 dark:text-amber-200 block text-[10px] uppercase tracking-wider mb-0.5">
+                                          Catatan Trainer:
+                                        </span>
+                                        <p className="italic">&ldquo;{obs.notes}&rdquo;</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
                   )}
                 </div>
-              )}
-            </div>
-          )
-        })
+              )
+            })
+          )}
+        </div>
       )}
-    </div>
-  )}
 
       {/* RESET PASSWORD MODAL */}
       {isResetOpen && (
@@ -1293,13 +1328,12 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2.5">
                 <div
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                    activeStatusModal.action === 'start_check'
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center ${activeStatusModal.action === 'start_check'
                       ? 'bg-amber-100 text-amber-600 dark:bg-amber-950/60'
                       : activeStatusModal.action === 'need_review'
-                      ? 'bg-rose-100 text-rose-600 dark:bg-rose-950/60'
-                      : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60'
-                  }`}
+                        ? 'bg-rose-100 text-rose-600 dark:bg-rose-950/60'
+                        : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60'
+                    }`}
                 >
                   {activeStatusModal.action === 'start_check' ? (
                     <PlayCircle className="w-5 h-5" />
@@ -1314,8 +1348,8 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
                     {activeStatusModal.action === 'start_check'
                       ? 'Mulai Understanding Check'
                       : activeStatusModal.action === 'need_review'
-                      ? 'Kembalikan ke Need Review'
-                      : 'Setujui: Ready for Trial Class'}
+                        ? 'Kembalikan ke Need Review'
+                        : 'Setujui: Ready for Trial Class'}
                   </h3>
                   <p className="text-[11px] text-slate-500 font-medium">
                     {activeStatusModal.termName} • Trainee: @{trainee.username} ({trainee.name})
@@ -1432,13 +1466,12 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
                   (activeStatusModal.action === 'need_review' && !statusNote.trim())
                 }
                 onClick={handleStatusAction}
-                className={`px-5 py-2 rounded-xl text-white text-xs font-semibold shadow-sm transition-all flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed ${
-                  activeStatusModal.action === 'start_check'
+                className={`px-5 py-2 rounded-xl text-white text-xs font-semibold shadow-sm transition-all flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed ${activeStatusModal.action === 'start_check'
                     ? 'bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300'
                     : activeStatusModal.action === 'need_review'
-                    ? 'bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400'
-                    : 'bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400'
-                }`}
+                      ? 'bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400'
+                      : 'bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400'
+                  }`}
               >
                 {isSubmittingAction ? (
                   <>
@@ -1450,8 +1483,8 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
                     {activeStatusModal.action === 'start_check'
                       ? 'Mulai Understanding Check'
                       : activeStatusModal.action === 'need_review'
-                      ? 'Kirim Need Review'
-                      : 'Konfirmasi Ready for Trial'}
+                        ? 'Kirim Need Review'
+                        : 'Konfirmasi Ready for Trial'}
                   </span>
                 )}
               </button>
@@ -1589,11 +1622,10 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
                           key={val}
                           type="button"
                           onClick={() => crit.setValue(val)}
-                          className={`w-8 h-8 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center justify-center ${
-                            crit.value === val
+                          className={`w-8 h-8 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center justify-center ${crit.value === val
                               ? 'bg-amber-500 text-white border-amber-500 shadow-xs ring-2 ring-amber-500/20'
                               : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-amber-300 dark:hover:border-amber-700'
-                          }`}
+                            }`}
                           aria-label={`${crit.title} nilai ${val}`}
                         >
                           {val}
@@ -1614,18 +1646,16 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
                   {/* Option 1: Pass */}
                   <div
                     onClick={() => setObsResult('pass')}
-                    className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer flex items-start gap-3 ${
-                      obsResult === 'pass'
+                    className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer flex items-start gap-3 ${obsResult === 'pass'
                         ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/40 shadow-xs'
                         : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300'
-                    }`}
+                      }`}
                   >
                     <div
-                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
-                        obsResult === 'pass'
+                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${obsResult === 'pass'
                           ? 'border-emerald-600 bg-emerald-600 text-white'
                           : 'border-slate-300 dark:border-slate-600'
-                      }`}
+                        }`}
                     >
                       {obsResult === 'pass' && <div className="w-2 h-2 rounded-full bg-white" />}
                     </div>
@@ -1643,18 +1673,16 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
                   {/* Option 2: Retry */}
                   <div
                     onClick={() => setObsResult('retry')}
-                    className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer flex items-start gap-3 ${
-                      obsResult === 'retry'
+                    className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer flex items-start gap-3 ${obsResult === 'retry'
                         ? 'border-rose-500 bg-rose-50/70 dark:bg-rose-950/40 shadow-xs'
                         : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300'
-                    }`}
+                      }`}
                   >
                     <div
-                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
-                        obsResult === 'retry'
+                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${obsResult === 'retry'
                           ? 'border-rose-600 bg-rose-600 text-white'
                           : 'border-slate-300 dark:border-slate-600'
-                      }`}
+                        }`}
                     >
                       {obsResult === 'retry' && <div className="w-2 h-2 rounded-full bg-white" />}
                     </div>

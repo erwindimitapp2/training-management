@@ -57,3 +57,9 @@ export const STATUS_STYLES: Record<
 export const GOLD_BADGE_STYLE = {
   bg: 'bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/30',
 }
+
+export function isValidHttpUrl(url: string | null | undefined): boolean {
+  if (!url) return false
+  const trimmed = url.trim()
+  return /^https?:\/\/[^\s]+$/i.test(trimmed)
+}

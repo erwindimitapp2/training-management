@@ -68,12 +68,12 @@ export function RegisterTraineeForm({
     )
   }
 
-  const handleSelectAll = () => {
-    if (selectedTermIds.length === levelTerms.length) {
-      setSelectedTermIds([])
-    } else {
-      setSelectedTermIds(levelTerms.map((t) => t.id))
-    }
+  const handleCheckAll = () => {
+    setSelectedTermIds(levelTerms.map((t) => t.id))
+  }
+
+  const handleUncheckAll = () => {
+    setSelectedTermIds([])
   }
 
   if (state?.success) {
@@ -312,13 +312,23 @@ export function RegisterTraineeForm({
                 <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                   Pilih Term {assignLevel === 'kinder' ? 'Kinder' : 'Junior'} ({selectedTermIds.length} dipilih)
                 </span>
-                <button
-                  type="button"
-                  onClick={handleSelectAll}
-                  className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
-                >
-                  {selectedTermIds.length === levelTerms.length ? 'Batalkan Semua' : 'Pilih Semua'}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCheckAll}
+                    className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                  >
+                    Centang Semua
+                  </button>
+                  <span className="text-slate-300 dark:text-slate-600">•</span>
+                  <button
+                    type="button"
+                    onClick={handleUncheckAll}
+                    className="text-xs font-semibold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 cursor-pointer"
+                  >
+                    Kosongkan Semua
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

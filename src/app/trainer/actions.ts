@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { usernameToEmail } from '@/lib/constants'
 import { ProgramLevel, TermStatus } from '@/types/database'
+import { isValidTrialLevel, isValidPlacementForLevel, getTrialLevelConfig } from '@/lib/levels'
 
 export type ActionResponse = {
   error?: string
@@ -404,7 +405,8 @@ export async function changeTermStatusAction(
   traineeTermId: number,
   action: TermStatusAction,
   traineeId: string,
-  note?: string
+  note?: string,
+  privateNote?: string
 ): Promise<ActionResponse> {
   try {
     const trainer = await verifyActiveTrainer()
@@ -418,10 +420,16 @@ export async function changeTermStatusAction(
 
     const supabase = await createClient()
 
+    const hasPrivateNote =
+      (action === 'need_review' || action === 'ready_for_trial') &&
+      privateNote &&
+      privateNote.trim().length > 0
+
     const { error } = await supabase.rpc('change_term_status', {
       p_trainee_term_id: traineeTermId,
       p_action: action,
       p_note: note?.trim() || undefined,
+      p_private_note: hasPrivateNote ? privateNote!.trim() : undefined,
     })
 
     if (error) {
@@ -754,6 +762,323 @@ export async function saveTermAssignmentsAction({
     }
   } catch (error: unknown) {
     console.error('saveTermAssignmentsAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}
+
+/**
+ * 8. Check Notes Actions (Trainer Only - Catatan Rahasia Understanding Check)
+ */
+export async function createCheckNoteAction(
+  traineeTermId: number,
+  traineeId: string,
+  note: string
+): Promise<ActionResponse> {
+  try {
+    const trainer = await verifyActiveTrainer()
+
+    const trimmed = note?.trim()
+    if (!trimmed || trimmed.length < 1 || trimmed.length > 2000) {
+      return { error: 'Catatan harus antara 1 hingga 2000 karakter.' }
+    }
+
+    const supabase = await createClient()
+    const { error } = await supabase.from('check_notes').insert({
+      trainee_term_id: traineeTermId,
+      note: trimmed,
+      outcome: null,
+      written_by: trainer.id,
+    })
+
+    if (error) {
+      console.error('createCheckNoteAction error:', error)
+      return { error: error.message || 'Gagal menambahkan catatan rahasia.' }
+    }
+
+    revalidatePath(`/trainer/trainees/${traineeId}`)
+    return { success: true, message: 'Catatan rahasia berhasil ditambahkan.' }
+  } catch (error: unknown) {
+    console.error('createCheckNoteAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}
+
+export async function updateCheckNoteAction(
+  noteId: number,
+  traineeId: string,
+  note: string
+): Promise<ActionResponse> {
+  try {
+    await verifyActiveTrainer()
+
+    const trimmed = note?.trim()
+    if (!trimmed || trimmed.length < 1 || trimmed.length > 2000) {
+      return { error: 'Catatan harus antara 1 hingga 2000 karakter.' }
+    }
+
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from('check_notes')
+      .update({ note: trimmed })
+      .eq('id', noteId)
+
+    if (error) {
+      console.error('updateCheckNoteAction error:', error)
+      return { error: error.message || 'Gagal memperbarui catatan.' }
+    }
+
+    revalidatePath(`/trainer/trainees/${traineeId}`)
+    return { success: true, message: 'Catatan berhasil diperbarui.' }
+  } catch (error: unknown) {
+    console.error('updateCheckNoteAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}
+
+export async function deleteCheckNoteAction(
+  noteId: number,
+  traineeId: string
+): Promise<ActionResponse> {
+  try {
+    await verifyActiveTrainer()
+
+    const supabase = await createClient()
+    const { error } = await supabase.from('check_notes').delete().eq('id', noteId)
+
+    if (error) {
+      console.error('deleteCheckNoteAction error:', error)
+      return { error: error.message || 'Gagal menghapus catatan.' }
+    }
+
+    revalidatePath(`/trainer/trainees/${traineeId}`)
+    return { success: true, message: 'Catatan berhasil dihapus.' }
+  } catch (error: unknown) {
+    console.error('deleteCheckNoteAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}
+
+/**
+ * 9. Trial Readiness Actions (Kelayakan Trial Class)
+ */
+export async function setTrialReadinessAction(
+  traineeId: string,
+  level: string,
+  isReady: boolean
+): Promise<ActionResponse> {
+  try {
+    await verifyActiveTrainer()
+
+    if (!isValidTrialLevel(level)) {
+      return { error: 'Level Trial Class tidak valid.' }
+    }
+
+    const supabase = await createClient()
+    const { error } = await supabase.rpc('set_trial_readiness', {
+      p_trainee_id: traineeId,
+      p_level: level,
+      p_ready: isReady,
+    })
+
+    if (error) {
+      console.error('set_trial_readiness RPC error:', error)
+      return { error: error.message || 'Gagal memperbarui status kelayakan.' }
+    }
+
+    revalidatePath(`/trainer/trainees/${traineeId}`)
+    revalidatePath('/trainer/layak-trial')
+    revalidatePath('/dashboard')
+
+    const levelConfig = getTrialLevelConfig(level)
+    const levelLabel = levelConfig ? levelConfig.label : level
+
+    return {
+      success: true,
+      message: isReady
+        ? `Trainee berhasil dinyatakan Layak Trial Class (${levelLabel}).`
+        : `Status Layak Trial Class (${levelLabel}) berhasil dibatalkan.`,
+    }
+  } catch (error: unknown) {
+    console.error('setTrialReadinessAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}
+
+export async function getTrialReadinessHistoryAction(traineeId: string) {
+  try {
+    await verifyActiveTrainer()
+
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from('trial_readiness_history')
+      .select('id, level, is_ready, changed_at, users:changed_by(name)')
+      .eq('trainee_id', traineeId)
+      .order('changed_at', { ascending: false })
+
+    if (error) {
+      console.error('getTrialReadinessHistoryAction error:', error)
+      return { error: error.message || 'Gagal memuat riwayat kelayakan.' }
+    }
+
+    const history = (data || []).map((h) => ({
+      id: h.id,
+      level: h.level,
+      isReady: h.is_ready,
+      changedAt: h.changed_at,
+      changedByName: (h.users as unknown as { name: string } | null)?.name || 'Trainer',
+    }))
+
+    return { history }
+  } catch (error: unknown) {
+    console.error('getTrialReadinessHistoryAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}
+
+/**
+ * 10. Trial Classes Actions (Penilaian Trial Class)
+ */
+export interface TrialClassInput {
+  id?: number
+  traineeId: string
+  trialDate: string
+  studentName?: string | null
+  level: string
+  placement?: string | null
+  scoreConduct: number
+  scorePlacement: number
+  scoreParentUpdate: number
+  notes?: string | null
+}
+
+export async function saveTrialClassAction(
+  input: TrialClassInput
+): Promise<ActionResponse & { trialClassId?: number }> {
+  try {
+    const trainer = await verifyActiveTrainer()
+
+    if (!input.traineeId) {
+      return { error: 'Trainee wajib dipilih.' }
+    }
+    if (!input.trialDate || !/^\d{4}-\d{2}-\d{2}$/.test(input.trialDate)) {
+      return { error: 'Tanggal Trial Class wajib diisi dengan format YYYY-MM-DD.' }
+    }
+    if (!isValidTrialLevel(input.level)) {
+      return { error: 'Level Trial Class tidak valid.' }
+    }
+    if (input.placement && !isValidPlacementForLevel(input.level, input.placement)) {
+      return { error: `Placement '${input.placement}' tidak valid untuk level '${input.level}'.` }
+    }
+    if (input.studentName && input.studentName.trim().length > 100) {
+      return { error: 'Nama calon murid maksimal 100 karakter.' }
+    }
+    if (input.notes && input.notes.trim().length > 2000) {
+      return { error: 'Catatan maksimal 2000 karakter.' }
+    }
+
+    const scores = [
+      { name: 'Conduct Trial Class', val: input.scoreConduct },
+      { name: 'Placement', val: input.scorePlacement },
+      { name: 'Update ke Orang Tua', val: input.scoreParentUpdate },
+    ]
+    for (const s of scores) {
+      if (
+        typeof s.val !== 'number' ||
+        isNaN(s.val) ||
+        s.val < 1 ||
+        s.val > 5 ||
+        !Number.isInteger(s.val)
+      ) {
+        return { error: `Nilai bintang untuk ${s.name} wajib diisi antara 1 hingga 5.` }
+      }
+    }
+
+    const supabase = await createClient()
+
+    if (input.id) {
+      const { error } = await supabase
+        .from('trial_classes')
+        .update({
+          trial_date: input.trialDate,
+          student_name: input.studentName?.trim() || null,
+          level: input.level as 'kinder' | 'junior' | 'coder',
+          placement: input.placement?.trim() || null,
+          score_conduct: input.scoreConduct,
+          score_placement: input.scorePlacement,
+          score_parent_update: input.scoreParentUpdate,
+          notes: input.notes?.trim() || null,
+        })
+        .eq('id', input.id)
+
+      if (error) {
+        console.error('Update trial_classes error:', error)
+        return { error: error.message || 'Gagal memperbarui data Trial Class.' }
+      }
+    } else {
+      const { error } = await supabase.from('trial_classes').insert({
+        trainee_id: input.traineeId,
+        trial_date: input.trialDate,
+        student_name: input.studentName?.trim() || null,
+        level: input.level as 'kinder' | 'junior' | 'coder',
+        placement: input.placement?.trim() || null,
+        score_conduct: input.scoreConduct,
+        score_placement: input.scorePlacement,
+        score_parent_update: input.scoreParentUpdate,
+        notes: input.notes?.trim() || null,
+        created_by: trainer.id,
+      })
+
+      if (error) {
+        console.error('Insert trial_classes error:', error)
+        return { error: error.message || 'Gagal menyimpan data Trial Class.' }
+      }
+    }
+
+    revalidatePath('/trainer/trial-class')
+    revalidatePath(`/trainer/trainees/${input.traineeId}`)
+
+    return {
+      success: true,
+      message: input.id
+        ? 'Penilaian Trial Class berhasil diperbarui!'
+        : 'Penilaian Trial Class berhasil disimpan!',
+    }
+  } catch (error: unknown) {
+    console.error('saveTrialClassAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}
+
+export async function deleteTrialClassAction(
+  id: number,
+  traineeId?: string
+): Promise<ActionResponse> {
+  try {
+    await verifyActiveTrainer()
+
+    const supabase = await createClient()
+    const { error } = await supabase.from('trial_classes').delete().eq('id', id)
+
+    if (error) {
+      console.error('deleteTrialClassAction error:', error)
+      return { error: error.message || 'Gagal menghapus penilaian Trial Class.' }
+    }
+
+    revalidatePath('/trainer/trial-class')
+    if (traineeId) {
+      revalidatePath(`/trainer/trainees/${traineeId}`)
+    }
+
+    return { success: true, message: 'Penilaian Trial Class berhasil dihapus.' }
+  } catch (error: unknown) {
+    console.error('deleteTrialClassAction error:', error)
     const errMessage = error instanceof Error ? error.message : String(error)
     return { error: errMessage }
   }

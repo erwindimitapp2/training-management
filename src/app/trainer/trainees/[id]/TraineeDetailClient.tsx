@@ -9,10 +9,19 @@ import {
   TermStatusAction,
   recordObservationAction,
   changeTraineeBranchAction,
+  createCheckNoteAction,
+  updateCheckNoteAction,
+  deleteCheckNoteAction,
+  setTrialReadinessAction,
+  getTrialReadinessHistoryAction,
+  deleteTrialClassAction,
 } from '@/app/trainer/actions'
 import { ProgramLevel, TermStatus, ObservationResult } from '@/types/database'
 import { STATUS_LABELS, STATUS_STYLES, GOLD_BADGE_STYLE, isValidHttpUrl } from '@/lib/constants'
+import { TRIAL_LEVELS, getTrialLevelConfig } from '@/lib/levels'
 import { AssignTermModal, MasterTermItem } from '@/components/AssignTermModal'
+import { TrialClassModal, ExistingTrialClass } from '@/components/TrialClassModal'
+import { StarRating } from '@/components/StarRating'
 import {
   ArrowLeft,
   Lock,
@@ -43,7 +52,22 @@ import {
   MapPin,
   ExternalLink,
   Layers,
+  Plus,
+  Trash2,
+  Edit2,
+  History,
 } from 'lucide-react'
+
+export interface CheckNoteItem {
+  id: number
+  traineeTermId: number
+  note: string
+  outcome: 'need_review' | 'ready_for_trial' | null
+  writtenBy: string
+  writtenByName: string
+  createdAt: string
+  updatedAt: string
+}
 
 export interface TermDetail {
   termId: number
@@ -85,6 +109,30 @@ export interface TermDetail {
     notes: string | null
     trainerName: string
   }>
+  checkNotes?: CheckNoteItem[]
+}
+
+export interface TraineeDetailTrialClass {
+  id: number
+  traineeId: string
+  trialDate: string
+  studentName?: string | null
+  level: string
+  placement?: string | null
+  scoreConduct: number
+  scorePlacement: number
+  scoreParentUpdate: number
+  notes?: string | null
+  createdAt: string
+}
+
+export interface TraineeDetailTrialReadiness {
+  id: number
+  level: string
+  isReady: boolean
+  changedBy: string | null
+  changedByName: string
+  changedAt: string
 }
 
 interface TraineeDetailClientProps {
@@ -98,12 +146,23 @@ interface TraineeDetailClientProps {
     isActive: boolean
     createdAt: string
   }
+  currentTrainerId: string
   branches: Array<{ id: number; name: string }>
   terms: TermDetail[]
   masterTerms: MasterTermItem[]
+  trialReadiness?: TraineeDetailTrialReadiness[]
+  trialClasses?: TraineeDetailTrialClass[]
 }
 
-export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: TraineeDetailClientProps) {
+export function TraineeDetailClient({
+  trainee,
+  currentTrainerId,
+  branches,
+  terms,
+  masterTerms,
+  trialReadiness = [],
+  trialClasses = [],
+}: TraineeDetailClientProps) {
   const [isActive, setIsActive] = useState(trainee.isActive)
   const [branchName, setBranchName] = useState(trainee.branchName)
   const [branchId, setBranchId] = useState<number | null>(trainee.branchId)
@@ -139,6 +198,7 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
     sortOrder: number
   } | null>(null)
   const [statusNote, setStatusNote] = useState('')
+  const [privateNote, setPrivateNote] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
   const [isSubmittingAction, startActionTransition] = useTransition()
@@ -155,11 +215,12 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
     null
   )
 
-  // Level tab state ('kinder' | 'junior')
-  const [levelTab, setLevelTab] = useState<'kinder' | 'junior'>(() => {
+  // Level tab state ('kinder' | 'junior' | 'trial_class')
+  const [levelTab, setLevelTab] = useState<'kinder' | 'junior' | 'trial_class'>(() => {
     const hasKinder = terms.some((t) => t.level === 'kinder')
     const hasJunior = terms.some((t) => t.level === 'junior')
     if (!hasKinder && hasJunior) return 'junior'
+    if (!hasKinder && !hasJunior && trialClasses.length > 0) return 'trial_class'
 
     const attentionTerm = terms.find(
       (t) =>
@@ -178,6 +239,109 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
     return 'kinder'
   })
 
+  // Check notes states (Trainer only)
+  const [addingNoteTermId, setAddingNoteTermId] = useState<number | null>(null)
+  const [newCheckNoteText, setNewCheckNoteText] = useState('')
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null)
+  const [editNoteText, setEditNoteText] = useState('')
+  const [isSavingNote, startNoteTransition] = useTransition()
+
+  const handleAddCheckNote = (traineeTermId: number) => {
+    if (!newCheckNoteText.trim()) return
+    startNoteTransition(async () => {
+      const res = await createCheckNoteAction(traineeTermId, trainee.id, newCheckNoteText)
+      if (res.error) {
+        setActionError(res.error)
+      } else {
+        setAddingNoteTermId(null)
+        setNewCheckNoteText('')
+        window.location.reload()
+      }
+    })
+  }
+
+  const handleUpdateCheckNote = (noteId: number) => {
+    if (!editNoteText.trim()) return
+    startNoteTransition(async () => {
+      const res = await updateCheckNoteAction(noteId, trainee.id, editNoteText)
+      if (res.error) {
+        setActionError(res.error)
+      } else {
+        setEditingNoteId(null)
+        setEditNoteText('')
+        window.location.reload()
+      }
+    })
+  }
+
+  const handleDeleteCheckNote = (noteId: number) => {
+    if (!window.confirm('Apakah Anda yakin ingin menghapus catatan rahasia ini?')) return
+    startNoteTransition(async () => {
+      const res = await deleteCheckNoteAction(noteId, trainee.id)
+      if (res.error) {
+        setActionError(res.error)
+      } else {
+        window.location.reload()
+      }
+    })
+  }
+
+  // Trial readiness states
+  const [expandedHistoryLevel, setExpandedHistoryLevel] = useState<string | null>(null)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [readinessHistories, setReadinessHistories] = useState<
+    Array<{ id: number; level: string; isReady: boolean; changedAt: string; changedByName: string }>
+  >([])
+  const [isReadinessPending, startReadinessTransition] = useTransition()
+
+  const handleToggleReadiness = (lvlKey: string, currentReady: boolean, lvlLabel: string) => {
+    const confirmMsg = currentReady
+      ? `Apakah Anda yakin ingin membatalkan status Layak Trial Class (${lvlLabel}) untuk ${trainee.name}?`
+      : `Tandai ${trainee.name} resmi Layak Trial Class (${lvlLabel})?`
+    if (!window.confirm(confirmMsg)) return
+
+    startReadinessTransition(async () => {
+      const res = await setTrialReadinessAction(trainee.id, lvlKey, !currentReady)
+      if (res.error) {
+        setActionError(res.error)
+      } else {
+        window.location.reload()
+      }
+    })
+  }
+
+  const handleToggleHistory = async (lvlKey: string) => {
+    if (expandedHistoryLevel === lvlKey) {
+      setExpandedHistoryLevel(null)
+      return
+    }
+
+    setExpandedHistoryLevel(lvlKey)
+    setHistoryLoading(true)
+    const res = await getTrialReadinessHistoryAction(trainee.id)
+    setHistoryLoading(false)
+    if (res.history) {
+      setReadinessHistories(res.history)
+    }
+  }
+
+  // Trial classes modal & actions
+  const [isTrialClassModalOpen, setIsTrialClassModalOpen] = useState(false)
+  const [editingTrialClass, setEditingTrialClass] = useState<ExistingTrialClass | null>(null)
+  const [isDeletingTrialClass, startDeletingTrialClass] = useTransition()
+
+  const handleDeleteTrialClass = (id: number) => {
+    if (!window.confirm('Apakah Anda yakin ingin menghapus data penilaian Trial Class ini?')) return
+    startDeletingTrialClass(async () => {
+      const res = await deleteTrialClassAction(id, trainee.id)
+      if (res.error) {
+        setActionError(res.error)
+      } else {
+        window.location.reload()
+      }
+    })
+  }
+
   const handleStatusAction = () => {
     if (!activeStatusModal) return
 
@@ -194,7 +358,8 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
         activeStatusModal.traineeTermId,
         activeStatusModal.action,
         trainee.id,
-        statusNote.trim()
+        statusNote.trim(),
+        privateNote.trim()
       )
 
       if (res.error) {
@@ -203,6 +368,7 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
         setActionSuccess(res.message || 'Status term berhasil diperbarui.')
         setActiveStatusModal(null)
         setStatusNote('')
+        setPrivateNote('')
         setTimeout(() => setActionSuccess(null), 3500)
       }
     })
@@ -378,6 +544,24 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
   ).length
 
   const activeLevelTerms = levelTab === 'kinder' ? kinderTerms : juniorTerms
+
+  const trialClassCount = trialClasses.length
+  const avgConduct =
+    trialClassCount > 0
+      ? trialClasses.reduce((s, c) => s + c.scoreConduct, 0) / trialClassCount
+      : 0
+  const avgPlacement =
+    trialClassCount > 0
+      ? trialClasses.reduce((s, c) => s + c.scorePlacement, 0) / trialClassCount
+      : 0
+  const avgParentUpdate =
+    trialClassCount > 0
+      ? trialClasses.reduce((s, c) => s + c.scoreParentUpdate, 0) / trialClassCount
+      : 0
+  const overallTrialAvg =
+    trialClassCount > 0
+      ? (avgConduct + avgPlacement + avgParentUpdate) / 3
+      : 0
 
   return (
     <div className="space-y-6">
@@ -599,64 +783,213 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
         </div>
       </div>
 
-      {/* When no terms assigned at all */}
-      {terms.length === 0 ? (
-        <div className="p-12 text-center rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
-          <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-            Belum ada term yang di-assign untuk trainee ini.
-          </p>
-          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-            Trainee belum memiliki akses ke materi. Klik tombol di bawah untuk meng-assign term Kinder atau Junior.
-          </p>
-          <button
-            type="button"
-            onClick={() => setIsAssignModalOpen(true)}
-            className="mt-2 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-md transition-all cursor-pointer"
-          >
-            <Layers className="w-4 h-4" />
-            <span>Assign Term Sekarang</span>
-          </button>
-        </div>
-      ) : (
-        /* Level Tabs: Kinder & Junior */
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
-            <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700/60">
-              <button
-                type="button"
-                onClick={() => setLevelTab('kinder')}
-                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 ${levelTab === 'kinder'
-                    ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-              >
-                <span>Kinder Level ({kinderTerms.length} Term)</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 font-mono">
-                  {kinderStudied}/{kinderTerms.length * 10}
-                </span>
-                {kinderNeedCheck > 0 && (
-                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Ada term Ready for Check" />
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setLevelTab('junior')}
-                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 ${levelTab === 'junior'
-                    ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-              >
-                <span>Junior Level ({juniorTerms.length} Term)</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 font-mono">
-                  {juniorStudied}/{juniorTerms.length * 10}
-                </span>
-                {juniorNeedCheck > 0 && (
-                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Ada term Ready for Check" />
-                )}
-              </button>
+      {/* SECTION: KELAYAKAN TRIAL CLASS */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 sm:p-6 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+              <Award className="w-5 h-5" />
             </div>
+            <div>
+              <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white">
+                Kelayakan Trial Class
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Status kesiapan trainee memegang kelas trial per level (Kinder, Junior, Coder)
+              </p>
+            </div>
+          </div>
+        </div>
 
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {TRIAL_LEVELS.map((lvl) => {
+            const readiness = trialReadiness.find((r) => r.level.toLowerCase() === lvl.key)
+            const isReady = readiness?.isReady ?? false
+            const isHistoryExpanded = expandedHistoryLevel === lvl.key
+            const lvlHistories = readinessHistories.filter((h) => h.level.toLowerCase() === lvl.key)
+
+            return (
+              <div
+                key={lvl.key}
+                className="p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/50 dark:bg-slate-800/30 flex flex-col justify-between gap-3"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-sm text-slate-900 dark:text-white">
+                      {lvl.label}
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+                        isReady
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
+                          : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                      }`}
+                    >
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${isReady ? 'bg-emerald-500' : 'bg-slate-400'}`}
+                      />
+                      <span>{isReady ? 'Layak' : 'Belum Layak'}</span>
+                    </span>
+                  </div>
+
+                  {readiness && readiness.changedAt ? (
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
+                      Diubah oleh{' '}
+                      <strong className="text-slate-700 dark:text-slate-300">
+                        {readiness.changedByName || 'Trainer'}
+                      </strong>
+                      <br />
+                      {new Date(readiness.changedAt).toLocaleString('id-ID', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      })}
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 italic">Belum ada pembaruan status</p>
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      disabled={isReadinessPending}
+                      onClick={() => handleToggleReadiness(lvl.key, isReady, lvl.label)}
+                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 ${
+                        isReady
+                          ? 'bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-600 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:text-rose-400'
+                          : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                      }`}
+                    >
+                      {isReadinessPending ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : isReady ? (
+                        <span>Batalkan Layak</span>
+                      ) : (
+                        <span>Tandai Layak</span>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleToggleHistory(lvl.key)}
+                      className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white dark:hover:bg-slate-800 cursor-pointer"
+                      title="Lihat riwayat perubahan"
+                    >
+                      <History className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Collapsible History */}
+                  {isHistoryExpanded && (
+                    <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 space-y-1.5 animate-in fade-in">
+                      <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        <span>Riwayat {lvl.label}</span>
+                        {historyLoading && <Loader2 className="w-3 h-3 animate-spin text-slate-400" />}
+                      </div>
+
+                      {historyLoading ? (
+                        <p className="text-[11px] text-slate-400">Memuat...</p>
+                      ) : lvlHistories.length === 0 ? (
+                        <p className="text-[11px] text-slate-400 italic">Belum ada riwayat</p>
+                      ) : (
+                        <div className="max-h-36 overflow-y-auto space-y-1 pr-1 text-[11px]">
+                          {lvlHistories.map((h) => (
+                            <div
+                              key={h.id}
+                              className="p-1.5 rounded bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60"
+                            >
+                              <div className="flex items-center justify-between gap-1">
+                                <span
+                                  className={`font-semibold ${
+                                    h.isReady ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500'
+                                  }`}
+                                >
+                                  {h.isReady ? 'Ditandai Layak' : 'Dibatalkan Layak'}
+                                </span>
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  {new Date(h.changedAt).toLocaleString('id-ID', {
+                                    dateStyle: 'short',
+                                    timeStyle: 'short',
+                                  })}
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-slate-400 mt-0.5">
+                                oleh {h.changedByName || 'Trainer'}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Level & Trial Class Tabs */}
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700/60 overflow-x-auto">
+            <button
+              type="button"
+              onClick={() => setLevelTab('kinder')}
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
+                levelTab === 'kinder'
+                  ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <span>Kinder Level ({kinderTerms.length} Term)</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 font-mono">
+                {kinderStudied}/{kinderTerms.length * 10}
+              </span>
+              {kinderNeedCheck > 0 && (
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Ada term Ready for Check" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setLevelTab('junior')}
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
+                levelTab === 'junior'
+                  ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <span>Junior Level ({juniorTerms.length} Term)</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 font-mono">
+                {juniorStudied}/{juniorTerms.length * 10}
+              </span>
+              {juniorNeedCheck > 0 && (
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Ada term Ready for Check" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setLevelTab('trial_class')}
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
+                levelTab === 'trial_class'
+                  ? 'bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <span>Trial Class ({trialClassCount} Sesi)</span>
+              {trialClassCount > 0 && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-300 font-mono flex items-center gap-0.5">
+                  <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-500" />
+                  <span>{overallTrialAvg.toFixed(1)}</span>
+                </span>
+              )}
+            </button>
+          </div>
+
+          {levelTab !== 'trial_class' ? (
             <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-3">
               <span>
                 Ready for Trial:{' '}
@@ -674,10 +1007,174 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
                 </strong>
               </span>
             </div>
-          </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setEditingTrialClass(null)
+                setIsTrialClassModalOpen(true)
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer self-start sm:self-auto"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Tambah Trial Class</span>
+            </button>
+          )}
+        </div>
 
-          {/* Assigned Terms for Selected Tab */}
-          {activeLevelTerms.length === 0 ? (
+        {/* Tab Content */}
+        {levelTab === 'trial_class' ? (
+          /* TRIAL CLASS TAB CONTENT */
+          <div className="space-y-4">
+            {/* Summary Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                <span className="text-slate-400 block mb-0.5">Rata-rata Conduct</span>
+                <span className="text-base font-bold text-slate-800 dark:text-slate-200">
+                  {trialClassCount > 0 ? avgConduct.toFixed(1) : '-'} <span className="text-xs text-slate-400 font-normal">/ 5</span>
+                </span>
+              </div>
+              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                <span className="text-slate-400 block mb-0.5">Rata-rata Placement</span>
+                <span className="text-base font-bold text-slate-800 dark:text-slate-200">
+                  {trialClassCount > 0 ? avgPlacement.toFixed(1) : '-'} <span className="text-xs text-slate-400 font-normal">/ 5</span>
+                </span>
+              </div>
+              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                <span className="text-slate-400 block mb-0.5">Rata-rata Update Ortu</span>
+                <span className="text-base font-bold text-slate-800 dark:text-slate-200">
+                  {trialClassCount > 0 ? avgParentUpdate.toFixed(1) : '-'} <span className="text-xs text-slate-400 font-normal">/ 5</span>
+                </span>
+              </div>
+              <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 shadow-xs">
+                <span className="text-amber-800 dark:text-amber-300 block mb-0.5 font-medium">Total Skor Rata-rata</span>
+                <span className="text-base font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                  <Star className="w-4 h-4 fill-amber-500 text-amber-500" />
+                  <span>{trialClassCount > 0 ? overallTrialAvg.toFixed(1) : '-'}</span>
+                  <span className="text-xs font-normal text-amber-700/70 dark:text-amber-400/70">/ 5.0</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Trial Classes Table or Empty State */}
+            {trialClasses.length === 0 ? (
+              <div className="p-12 text-center rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                  Belum ada sesi Trial Class untuk trainee ini.
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                  Klik tombol di bawah untuk menambahkan penilaian sesi Trial Class pertama.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingTrialClass(null)
+                    setIsTrialClassModalOpen(true)
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Tambah Sesi Trial Class Pertama</span>
+                </button>
+              </div>
+            ) : (
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 uppercase tracking-wider text-[11px] border-b border-slate-200 dark:border-slate-800">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold">Tanggal</th>
+                        <th className="px-4 py-3 font-semibold">Murid</th>
+                        <th className="px-4 py-3 font-semibold">Level &amp; Placement</th>
+                        <th className="px-4 py-3 font-semibold">Conduct</th>
+                        <th className="px-4 py-3 font-semibold">Placement</th>
+                        <th className="px-4 py-3 font-semibold">Update Ortu</th>
+                        <th className="px-4 py-3 font-semibold">Total</th>
+                        <th className="px-4 py-3 font-semibold">Catatan</th>
+                        <th className="px-4 py-3 font-semibold text-right">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {trialClasses.map((tc) => {
+                        const total = ((tc.scoreConduct + tc.scorePlacement + tc.scoreParentUpdate) / 3).toFixed(1)
+                        const lvlConfig = getTrialLevelConfig(tc.level)
+
+                        return (
+                          <tr key={tc.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                            <td className="px-4 py-3 font-medium text-slate-900 dark:text-white whitespace-nowrap">
+                              {tc.trialDate}
+                            </td>
+                            <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
+                              {tc.studentName || '-'}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 mr-1.5">
+                                {lvlConfig?.label || tc.level}
+                              </span>
+                              <span className="text-slate-500">{tc.placement || '-'}</span>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <StarRating value={tc.scoreConduct} readOnly size="sm" />
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <StarRating value={tc.scorePlacement} readOnly size="sm" />
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <StarRating value={tc.scoreParentUpdate} readOnly size="sm" />
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap font-bold text-amber-600 dark:text-amber-400">
+                              {total} / 5.0
+                            </td>
+                            <td className="px-4 py-3 max-w-xs text-slate-600 dark:text-slate-400 truncate">
+                              {tc.notes || '-'}
+                            </td>
+                            <td className="px-4 py-3 text-right whitespace-nowrap">
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingTrialClass({
+                                      id: tc.id,
+                                      traineeId: tc.traineeId,
+                                      trialDate: tc.trialDate,
+                                      studentName: tc.studentName,
+                                      level: tc.level,
+                                      placement: tc.placement,
+                                      scoreConduct: tc.scoreConduct,
+                                      scorePlacement: tc.scorePlacement,
+                                      scoreParentUpdate: tc.scoreParentUpdate,
+                                      notes: tc.notes,
+                                    })
+                                    setIsTrialClassModalOpen(true)
+                                  }}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                                  title="Edit Penilaian"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isDeletingTrialClass}
+                                  onClick={() => handleDeleteTrialClass(tc.id)}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50"
+                                  title="Hapus Penilaian"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* KINDER / JUNIOR TAB CONTENT */
+          activeLevelTerms.length === 0 ? (
             <div className="p-10 text-center rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
                 Belum ada term {levelTab === 'kinder' ? 'Kinder' : 'Junior'} yang di-assign untuk trainee ini.
@@ -859,6 +1356,7 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
                                     sortOrder: term.sortOrder,
                                   })
                                   setStatusNote('')
+                                  setPrivateNote('')
                                   setActionError(null)
                                 }}
                                 className="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-700/80 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-bold tracking-wide transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
@@ -879,6 +1377,7 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
                                     sortOrder: term.sortOrder,
                                   })
                                   setStatusNote('')
+                                  setPrivateNote('')
                                   setActionError(null)
                                 }}
                                 className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold tracking-wide shadow-md hover:shadow-emerald-600/25 transition-all flex items-center gap-1.5 cursor-pointer"
@@ -1213,14 +1712,197 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
                           )}
                         </div>
                       )}
+
+                      {/* Catatan Trainer (Rahasia) */}
+                      {(status === 'understanding_check' ||
+                        term.history.some(
+                          (h) =>
+                            h.toStatus === 'understanding_check' ||
+                            h.toStatus === 'need_review' ||
+                            h.toStatus === 'ready_for_trial' ||
+                            h.fromStatus === 'understanding_check'
+                        ) ||
+                        (term.checkNotes && term.checkNotes.length > 0)) && (
+                        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <Lock className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                              <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                                Catatan Trainer (Rahasia)
+                              </h4>
+                              <span className="text-[10px] bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded-full font-medium">
+                                Rahasia • Hanya Terlihat Trainer
+                              </span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAddingNoteTermId(
+                                  addingNoteTermId === term.traineeTerm?.id ? null : term.traineeTerm?.id || null
+                                )
+                                setNewCheckNoteText('')
+                              }}
+                              className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700/60 hover:bg-amber-100 flex items-center gap-1 cursor-pointer transition-colors"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Tambah Catatan</span>
+                            </button>
+                          </div>
+
+                          {/* Adding form */}
+                          {addingNoteTermId === term.traineeTerm?.id && (
+                            <div className="p-3.5 rounded-xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-300/80 dark:border-amber-700/60 space-y-2 animate-in fade-in">
+                              <label className="block text-[11px] font-bold uppercase text-amber-900 dark:text-amber-200">
+                                Tulis Catatan Rahasia Baru
+                              </label>
+                              <textarea
+                                rows={3}
+                                maxLength={2000}
+                                value={newCheckNoteText}
+                                onChange={(e) => setNewCheckNoteText(e.target.value)}
+                                placeholder="Tuliskan catatan evaluasi rahasia untuk sesama trainer..."
+                                className="w-full p-2.5 text-xs rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40 resize-none"
+                              />
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setAddingNoteTermId(null)}
+                                  className="px-3 py-1 rounded-lg text-xs font-semibold text-slate-500 hover:bg-slate-100 cursor-pointer"
+                                >
+                                  Batal
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isSavingNote || !newCheckNoteText.trim()}
+                                  onClick={() => handleAddCheckNote(term.traineeTerm!.id)}
+                                  className="px-3 py-1 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-xs cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                                >
+                                  {isSavingNote && <Loader2 className="w-3 h-3 animate-spin" />}
+                                  <span>Simpan Catatan</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Notes list */}
+                          {term.checkNotes && term.checkNotes.length > 0 ? (
+                            <div className="space-y-2">
+                              {term.checkNotes.map((cn) => {
+                                const isEditing = editingNoteId === cn.id
+                                const isAuthor = cn.writtenBy === currentTrainerId
+
+                                return (
+                                  <div
+                                    key={cn.id}
+                                    className="p-3 rounded-xl bg-amber-50/30 dark:bg-amber-950/15 border border-amber-200/60 dark:border-amber-900/40 text-xs space-y-1.5"
+                                  >
+                                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                          {cn.writtenByName}
+                                        </span>
+                                        {cn.outcome === 'need_review' && (
+                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200">
+                                            Need Review
+                                          </span>
+                                        )}
+                                        {cn.outcome === 'ready_for_trial' && (
+                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200">
+                                            Ready for Trial Class
+                                          </span>
+                                        )}
+                                        {cn.outcome === null && (
+                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                            Catatan tambahan
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[10px] text-slate-400 font-mono">
+                                          {new Date(cn.createdAt).toLocaleString('id-ID', {
+                                            dateStyle: 'medium',
+                                            timeStyle: 'short',
+                                          })}
+                                        </span>
+                                        <div className="flex items-center gap-1">
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setEditingNoteId(cn.id)
+                                              setEditNoteText(cn.note)
+                                            }}
+                                            className="p-1 rounded text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                                            title="Edit Catatan"
+                                          >
+                                            <Edit2 className="w-3 h-3" />
+                                          </button>
+                                          {isAuthor && (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleDeleteCheckNote(cn.id)}
+                                              className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                                              title="Hapus Catatan"
+                                            >
+                                              <Trash2 className="w-3 h-3" />
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {isEditing ? (
+                                      <div className="pt-1 space-y-1.5">
+                                        <textarea
+                                          rows={2}
+                                          maxLength={2000}
+                                          value={editNoteText}
+                                          onChange={(e) => setEditNoteText(e.target.value)}
+                                          className="w-full p-2 text-xs rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                        />
+                                        <div className="flex items-center justify-end gap-1.5">
+                                          <button
+                                            type="button"
+                                            onClick={() => setEditingNoteId(null)}
+                                            className="px-2 py-0.5 rounded text-[11px] text-slate-500 hover:bg-slate-100 cursor-pointer"
+                                          >
+                                            Batal
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={isSavingNote || !editNoteText.trim()}
+                                            onClick={() => handleUpdateCheckNote(cn.id)}
+                                            className="px-2.5 py-0.5 rounded text-[11px] font-bold bg-amber-600 hover:bg-amber-700 text-white cursor-pointer"
+                                          >
+                                            Simpan
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <p className="text-slate-700 dark:text-slate-200 leading-relaxed italic">
+                                        &ldquo;{cn.note}&rdquo;
+                                      </p>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-slate-400 italic py-1">
+                              Belum ada catatan rahasia trainer untuk term ini.
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
               )
             })
-          )}
-        </div>
-      )}
+          )
+        )}
+      </div>
 
       {/* RESET PASSWORD MODAL */}
       {isResetOpen && (
@@ -1414,6 +2096,31 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
                     Catatan ini wajib diisi dan akan tersimpan di riwayat status serta dapat dilihat oleh trainee.
                   </p>
                 </div>
+
+                {/* Catatan Rahasia Trainer */}
+                <div className="p-3.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700/60 space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    <label
+                      htmlFor="needReviewPrivateNote"
+                      className="text-xs font-bold uppercase tracking-wider text-amber-900 dark:text-amber-200"
+                    >
+                      Catatan rahasia trainer (opsional)
+                    </label>
+                  </div>
+                  <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                    Hanya terlihat trainer, tidak terlihat trainee.
+                  </p>
+                  <textarea
+                    id="needReviewPrivateNote"
+                    rows={3}
+                    maxLength={2000}
+                    value={privateNote}
+                    onChange={(e) => setPrivateNote(e.target.value)}
+                    placeholder="Tuliskan catatan rahasia internal untuk trainer..."
+                    className="w-full p-2.5 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-amber-500/50 resize-none"
+                  />
+                </div>
               </div>
             )}
 
@@ -1433,7 +2140,7 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
                     htmlFor="readyForTrialNote"
                     className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5"
                   >
-                    Catatan Tambahan (Opsional)
+                    Catatan Tambahan untuk Trainee (Opsional)
                   </label>
                   <input
                     id="readyForTrialNote"
@@ -1442,6 +2149,31 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
                     onChange={(e) => setStatusNote(e.target.value)}
                     placeholder="Contoh: Pemahaman konsep sangat baik, siap mengajar trial..."
                     className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                  />
+                </div>
+
+                {/* Catatan Rahasia Trainer */}
+                <div className="p-3.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700/60 space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    <label
+                      htmlFor="readyForTrialPrivateNote"
+                      className="text-xs font-bold uppercase tracking-wider text-amber-900 dark:text-amber-200"
+                    >
+                      Catatan rahasia trainer (opsional)
+                    </label>
+                  </div>
+                  <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                    Hanya terlihat trainer, tidak terlihat trainee.
+                  </p>
+                  <textarea
+                    id="readyForTrialPrivateNote"
+                    rows={3}
+                    maxLength={2000}
+                    value={privateNote}
+                    onChange={(e) => setPrivateNote(e.target.value)}
+                    placeholder="Tuliskan catatan rahasia internal untuk trainer..."
+                    className="w-full p-2.5 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-amber-500/50 resize-none"
                   />
                 </div>
               </div>
@@ -1878,6 +2610,31 @@ export function TraineeDetailClient({ trainee, branches, terms, masterTerms }: T
           username: trainee.username,
         }}
         masterTerms={masterTerms}
+      />
+
+      {/* TRIAL CLASS MODAL */}
+      <TrialClassModal
+        isOpen={isTrialClassModalOpen}
+        onClose={() => {
+          setIsTrialClassModalOpen(false)
+          setEditingTrialClass(null)
+        }}
+        trainees={[
+          {
+            id: trainee.id,
+            name: trainee.name,
+            username: trainee.username,
+            branchId: trainee.branchId,
+            branchName: trainee.branchName,
+          },
+        ]}
+        defaultTraineeId={trainee.id}
+        initialData={editingTrialClass}
+        onSuccess={() => {
+          setIsTrialClassModalOpen(false)
+          setEditingTrialClass(null)
+          window.location.reload()
+        }}
       />
     </div>
   )

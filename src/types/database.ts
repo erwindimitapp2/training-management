@@ -328,6 +328,198 @@ export interface Database {
           }
         ]
       }
+      check_notes: {
+        Row: {
+          id: number
+          trainee_term_id: number
+          note: string
+          outcome: 'need_review' | 'ready_for_trial' | null
+          written_by: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          trainee_term_id: number
+          note: string
+          outcome?: 'need_review' | 'ready_for_trial' | null
+          written_by: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          trainee_term_id?: number
+          note?: string
+          outcome?: 'need_review' | 'ready_for_trial' | null
+          written_by?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "check_notes_trainee_term_id_fkey"
+            columns: ["trainee_term_id"]
+            isOneToOne: false
+            referencedRelation: "trainee_terms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "check_notes_written_by_fkey"
+            columns: ["written_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      trial_classes: {
+        Row: {
+          id: number
+          trainee_id: string
+          trial_date: string
+          student_name: string | null
+          level: 'kinder' | 'junior' | 'coder'
+          placement: string | null
+          score_conduct: number
+          score_placement: number
+          score_parent_update: number
+          notes: string | null
+          created_by: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          trainee_id: string
+          trial_date: string
+          student_name?: string | null
+          level: 'kinder' | 'junior' | 'coder'
+          placement?: string | null
+          score_conduct: number
+          score_placement: number
+          score_parent_update: number
+          notes?: string | null
+          created_by: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          trainee_id?: string
+          trial_date?: string
+          student_name?: string | null
+          level?: 'kinder' | 'junior' | 'coder'
+          placement?: string | null
+          score_conduct?: number
+          score_placement?: number
+          score_parent_update?: number
+          notes?: string | null
+          created_by?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trial_classes_trainee_id_fkey"
+            columns: ["trainee_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trial_classes_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      trial_readiness: {
+        Row: {
+          id: number
+          trainee_id: string
+          level: 'kinder' | 'junior' | 'coder'
+          is_ready: boolean
+          changed_by: string | null
+          changed_at: string
+        }
+        Insert: {
+          id?: number
+          trainee_id: string
+          level: 'kinder' | 'junior' | 'coder'
+          is_ready?: boolean
+          changed_by?: string | null
+          changed_at?: string
+        }
+        Update: {
+          id?: number
+          trainee_id?: string
+          level?: 'kinder' | 'junior' | 'coder'
+          is_ready?: boolean
+          changed_by?: string | null
+          changed_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trial_readiness_trainee_id_fkey"
+            columns: ["trainee_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trial_readiness_changed_by_fkey"
+            columns: ["changed_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      trial_readiness_history: {
+        Row: {
+          id: number
+          trainee_id: string
+          level: 'kinder' | 'junior' | 'coder'
+          is_ready: boolean
+          changed_by: string
+          changed_at: string
+        }
+        Insert: {
+          id?: number
+          trainee_id: string
+          level: 'kinder' | 'junior' | 'coder'
+          is_ready: boolean
+          changed_by: string
+          changed_at?: string
+        }
+        Update: {
+          id?: number
+          trainee_id?: string
+          level?: 'kinder' | 'junior' | 'coder'
+          is_ready?: boolean
+          changed_by?: string
+          changed_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trial_readiness_history_trainee_id_fkey"
+            columns: ["trainee_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trial_readiness_history_changed_by_fkey"
+            columns: ["changed_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -365,6 +557,15 @@ export interface Database {
           p_trainee_term_id: number
           p_action: string
           p_note?: string
+          p_private_note?: string
+        }
+        Returns: void
+      }
+      set_trial_readiness: {
+        Args: {
+          p_trainee_id: string
+          p_level: string
+          p_ready: boolean
         }
         Returns: void
       }

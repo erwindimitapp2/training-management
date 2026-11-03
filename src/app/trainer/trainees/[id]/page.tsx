@@ -179,7 +179,67 @@ export default async function TraineeDetailPage({ params }: PageProps) {
       observationList = obsData as unknown as typeof observationList
     }
 
-    // 9. Assemble into TermDetail[] - ONLY assigned terms
+    // 9. Fetch check_notes for this trainee's terms (trainer only)
+    let checkNotesList: Array<{
+      id: number
+      trainee_term_id: number
+      note: string
+      outcome: 'need_review' | 'ready_for_trial' | null
+      written_by: string
+      created_at: string
+      updated_at: string
+      users: { name: string } | null
+    }> = []
+
+    if (traineeTermIds.length > 0) {
+      const { data: cnData } = await supabase
+        .from('check_notes')
+        .select('id, trainee_term_id, note, outcome, written_by, created_at, updated_at, users:written_by(name)')
+        .in('trainee_term_id', traineeTermIds)
+        .order('created_at', { ascending: false })
+
+      if (cnData) {
+        checkNotesList = cnData as unknown as typeof checkNotesList
+      }
+    }
+
+    // 10. Fetch trial_readiness for this trainee
+    const { data: readinessData } = await supabase
+      .from('trial_readiness')
+      .select('id, level, is_ready, changed_by, changed_at, users:changed_by(name)')
+      .eq('trainee_id', traineeId)
+
+    const trialReadiness = (readinessData || []).map((r) => ({
+      id: r.id,
+      level: r.level,
+      isReady: r.is_ready,
+      changedBy: r.changed_by,
+      changedByName: (r.users as unknown as { name: string } | null)?.name || 'Trainer',
+      changedAt: r.changed_at,
+    }))
+
+    // 11. Fetch trial_classes for this trainee
+    const { data: traineeTrialClassesData } = await supabase
+      .from('trial_classes')
+      .select('id, trial_date, student_name, level, placement, score_conduct, score_placement, score_parent_update, notes, created_at')
+      .eq('trainee_id', traineeId)
+      .order('trial_date', { ascending: false })
+
+    const trialClasses = (traineeTrialClassesData || []).map((tc) => ({
+      id: tc.id,
+      traineeId,
+      trialDate: tc.trial_date,
+      studentName: tc.student_name,
+      level: tc.level,
+      placement: tc.placement,
+      scoreConduct: tc.score_conduct,
+      scorePlacement: tc.score_placement,
+      scoreParentUpdate: tc.score_parent_update,
+      notes: tc.notes,
+      createdAt: tc.created_at,
+    }))
+
+    // 12. Assemble into TermDetail[] - ONLY assigned terms
     const assignedTermsList = termsList.filter((term) =>
       traineeTerms.some((tt) => tt.term_id === term.id)
     )
@@ -226,6 +286,19 @@ export default async function TraineeDetailPage({ params }: PageProps) {
           trainerName: o.users?.name || 'Trainer',
         }))
 
+      const checkNotes = checkNotesList
+        .filter((cn) => cn.trainee_term_id === tt.id)
+        .map((cn) => ({
+          id: cn.id,
+          traineeTermId: cn.trainee_term_id,
+          note: cn.note,
+          outcome: cn.outcome,
+          writtenBy: cn.written_by,
+          writtenByName: cn.users?.name || 'Trainer',
+          createdAt: cn.created_at,
+          updatedAt: cn.updated_at,
+        }))
+
       return {
         termId: term.id,
         name: term.name,
@@ -241,6 +314,7 @@ export default async function TraineeDetailPage({ params }: PageProps) {
         lessons,
         history,
         observations,
+        checkNotes,
       }
     })
 
@@ -268,6 +342,7 @@ export default async function TraineeDetailPage({ params }: PageProps) {
               isActive: traineeData.is_active,
               createdAt: traineeData.created_at || '',
             }}
+            currentTrainerId={trainerProfile.id}
             branches={branches}
             terms={terms}
             masterTerms={termsList.map((t) => ({
@@ -276,6 +351,8 @@ export default async function TraineeDetailPage({ params }: PageProps) {
               level: t.level as ProgramLevel,
               sortOrder: t.sort_order,
             }))}
+            trialReadiness={trialReadiness}
+            trialClasses={trialClasses}
           />
         </main>
       </div>

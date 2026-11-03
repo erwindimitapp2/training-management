@@ -2,7 +2,8 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Navbar } from '@/components/Navbar'
 import { TermStatus } from '@/types/database'
-import { Sparkles, Award, GraduationCap, BookOpen, Layers } from 'lucide-react'
+import { getTrialLevelConfig } from '@/lib/levels'
+import { Sparkles, Award, GraduationCap, BookOpen, Layers, CheckCircle2 } from 'lucide-react'
 import { DashboardTabsClient, TermCardItem } from './DashboardTabsClient'
 
 export const dynamic = 'force-dynamic'
@@ -72,6 +73,15 @@ export default async function TraineeDashboardPage() {
       lessons: { term_id: number } | null
     }>
 
+    // 4b. Fetch trial_readiness (status kelayakan trial class - trainee only sees is_ready)
+    const { data: readinessData } = await supabase
+      .from('trial_readiness')
+      .select('level, is_ready')
+      .eq('trainee_id', user.id)
+      .eq('is_ready', true)
+
+    const readyLevels = readinessData || []
+
     // 5. Build term cards data - ONLY assigned terms
     const mapTermData = (term: (typeof termsList)[number]): TermCardItem => {
       const tt = traineeTerms.find((t) => t.term_id === term.id)
@@ -131,6 +141,46 @@ export default async function TraineeDashboardPage() {
         ? Math.min(100, Math.round((totalLessonsStudied / totalAssignedLessons) * 100))
         : 0
 
+    const trialReadinessBadgeSection = (
+      <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-4 h-4" />
+          </div>
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+              Kelayakan Trial Class
+            </h3>
+            <p className="text-[11px] text-slate-400">
+              Izin memandu sesi dengan calon murid sungguhan
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {readyLevels.length > 0 ? (
+            readyLevels.map((lvl) => {
+              const config = getTrialLevelConfig(lvl.level)
+              const label = config ? config.label : lvl.level
+              return (
+                <span
+                  key={lvl.level}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 shadow-2xs"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>Layak Trial Class · {label}</span>
+                </span>
+              )
+            })
+          ) : (
+            <span className="text-xs text-slate-400 italic">
+              Belum ada level yang dinyatakan layak Trial Class.
+            </span>
+          )}
+        </div>
+      </div>
+    )
+
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
         <Navbar
@@ -164,6 +214,8 @@ export default async function TraineeDashboardPage() {
                   </p>
                 </div>
               </section>
+
+              {trialReadinessBadgeSection}
 
               {/* Empty State Banner */}
               <div className="bg-white dark:bg-slate-900 rounded-3xl p-12 text-center border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
@@ -220,6 +272,8 @@ export default async function TraineeDashboardPage() {
                   </div>
                 </div>
               </section>
+
+              {trialReadinessBadgeSection}
 
               {/* Quick Stats Grid */}
               <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">

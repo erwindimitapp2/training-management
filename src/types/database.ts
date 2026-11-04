@@ -487,6 +487,114 @@ export interface Database {
           }
         ]
       }
+      progress_update_evaluations: {
+        Row: {
+          id: number
+          trainee_term_id: number
+          evaluation_date: string
+          meeting_number: 8 | 9 | null
+          score_accuracy: number
+          score_clarity: number
+          score_timeliness: number
+          score_followup: number
+          notes: string | null
+          evaluated_by: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          trainee_term_id: number
+          evaluation_date?: string
+          meeting_number?: 8 | 9 | null
+          score_accuracy: number
+          score_clarity: number
+          score_timeliness: number
+          score_followup: number
+          notes?: string | null
+          evaluated_by: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          trainee_term_id?: number
+          evaluation_date?: string
+          meeting_number?: 8 | 9 | null
+          score_accuracy?: number
+          score_clarity?: number
+          score_timeliness?: number
+          score_followup?: number
+          notes?: string | null
+          evaluated_by?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "progress_update_evaluations_trainee_term_id_fkey"
+            columns: ["trainee_term_id"]
+            isOneToOne: false
+            referencedRelation: "trainee_terms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "progress_update_evaluations_evaluated_by_fkey"
+            columns: ["evaluated_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      final_project_evaluations: {
+        Row: {
+          id: number
+          trainee_term_id: number
+          evaluation_date: string
+          result: 'meets_standard' | 'not_yet'
+          notes: string | null
+          evaluated_by: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          trainee_term_id: number
+          evaluation_date?: string
+          result: 'meets_standard' | 'not_yet'
+          notes?: string | null
+          evaluated_by: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          trainee_term_id?: number
+          evaluation_date?: string
+          result?: 'meets_standard' | 'not_yet'
+          notes?: string | null
+          evaluated_by?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "final_project_evaluations_trainee_term_id_fkey"
+            columns: ["trainee_term_id"]
+            isOneToOne: false
+            referencedRelation: "trainee_terms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "final_project_evaluations_evaluated_by_fkey"
+            columns: ["evaluated_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       trial_readiness: {
         Row: {
           id: number

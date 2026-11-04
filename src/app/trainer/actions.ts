@@ -643,7 +643,22 @@ export async function getTraineeAssignedTermsAction(
 
     const historyTtIdSet = new Set((historyData || []).map((h) => h.trainee_term_id))
 
-    // 4. Map to AssignedTermInfo
+    // 4. Fetch progress_update_evaluations and final_project_evaluations
+    const { data: pueData } = await supabase
+      .from('progress_update_evaluations')
+      .select('trainee_term_id')
+      .in('trainee_term_id', traineeTermIds)
+
+    const pueTtIdSet = new Set((pueData || []).map((p) => p.trainee_term_id))
+
+    const { data: fpeData } = await supabase
+      .from('final_project_evaluations')
+      .select('trainee_term_id')
+      .in('trainee_term_id', traineeTermIds)
+
+    const fpeTtIdSet = new Set((fpeData || []).map((f) => f.trainee_term_id))
+
+    // 5. Map to AssignedTermInfo
     const assignedTerms: AssignedTermInfo[] = ttData.map((tt) => {
       const termObj = tt.terms as unknown as {
         id: number
@@ -654,11 +669,15 @@ export async function getTraineeAssignedTermsAction(
 
       const hasLessonProgress = termWithLessonProgressSet.has(tt.term_id)
       const hasHistory = historyTtIdSet.has(tt.id)
+      const hasPue = pueTtIdSet.has(tt.id)
+      const hasFpe = fpeTtIdSet.has(tt.id)
       const hasProgress =
         tt.cleared_to_teach ||
         tt.status !== 'in_self_training' ||
         hasLessonProgress ||
-        hasHistory
+        hasHistory ||
+        hasPue ||
+        hasFpe
 
       return {
         id: tt.id,
@@ -1223,6 +1242,361 @@ export async function deleteTrialClassAction(
     return { success: true, message: 'Trial Class berhasil dihapus.' }
   } catch (error: unknown) {
     console.error('deleteTrialClassAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}
+
+
+// =====================================================================
+// TAHAP 2 PENILAIAN ACTIONS (Progress Update & Final Project)
+// =====================================================================
+
+export interface CreateProgressUpdateInput {
+  traineeTermId: number
+  evaluationDate?: string // YYYY-MM-DD
+  meetingNumber?: 8 | 9 | null
+  scoreAccuracy: number
+  scoreClarity: number
+  scoreTimeliness: number
+  scoreFollowup: number
+  notes?: string | null
+  traineeId?: string
+}
+
+export async function createProgressUpdateAction(
+  input: CreateProgressUpdateInput
+): Promise<ActionResponse> {
+  try {
+    const trainer = await verifyActiveTrainer()
+
+    if (!input.traineeTermId) {
+      return { error: 'Term tidak valid.' }
+    }
+
+    const scores = [
+      { name: 'Akurasi isi perkembangan anak', val: input.scoreAccuracy },
+      { name: 'Kejelasan bahasa untuk orang tua', val: input.scoreClarity },
+      { name: 'Ketepatan waktu', val: input.scoreTimeliness },
+      { name: 'Saran tindak lanjut', val: input.scoreFollowup },
+    ]
+
+    for (const s of scores) {
+      if (
+        typeof s.val !== 'number' ||
+        isNaN(s.val) ||
+        s.val < 1 ||
+        s.val > 5 ||
+        !Number.isInteger(s.val)
+      ) {
+        return { error: `Skor ${s.name} harus berupa angka bulat antara 1 hingga 5.` }
+      }
+    }
+
+    if (
+      input.meetingNumber !== undefined &&
+      input.meetingNumber !== null &&
+      input.meetingNumber !== 8 &&
+      input.meetingNumber !== 9
+    ) {
+      return { error: 'Pertemuan hanya boleh 8 atau 9.' }
+    }
+
+    const trimmedNotes = input.notes?.trim() || null
+    if (trimmedNotes && trimmedNotes.length > 2000) {
+      return { error: 'Catatan maksimal 2000 karakter.' }
+    }
+
+    const supabase = await createClient()
+
+    const { error } = await supabase.from('progress_update_evaluations').insert({
+      trainee_term_id: input.traineeTermId,
+      evaluation_date: input.evaluationDate || undefined,
+      meeting_number: input.meetingNumber || null,
+      score_accuracy: input.scoreAccuracy,
+      score_clarity: input.scoreClarity,
+      score_timeliness: input.scoreTimeliness,
+      score_followup: input.scoreFollowup,
+      notes: trimmedNotes,
+      evaluated_by: trainer.id,
+    })
+
+    if (error) {
+      console.error('createProgressUpdateAction error:', error)
+      return { error: error.message || 'Gagal menyimpan penilaian Update Progress.' }
+    }
+
+    if (input.traineeId) {
+      revalidatePath(`/trainer/trainees/${input.traineeId}`)
+    }
+
+    return { success: true, message: 'Penilaian Update Progress berhasil disimpan.' }
+  } catch (error: unknown) {
+    console.error('createProgressUpdateAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}
+
+export interface UpdateProgressUpdateInput {
+  id: number
+  evaluationDate?: string
+  meetingNumber?: 8 | 9 | null
+  scoreAccuracy: number
+  scoreClarity: number
+  scoreTimeliness: number
+  scoreFollowup: number
+  notes?: string | null
+  traineeId?: string
+}
+
+export async function updateProgressUpdateAction(
+  input: UpdateProgressUpdateInput
+): Promise<ActionResponse> {
+  try {
+    await verifyActiveTrainer()
+
+    if (!input.id) {
+      return { error: 'ID penilaian tidak valid.' }
+    }
+
+    const scores = [
+      { name: 'Akurasi isi perkembangan anak', val: input.scoreAccuracy },
+      { name: 'Kejelasan bahasa untuk orang tua', val: input.scoreClarity },
+      { name: 'Ketepatan waktu', val: input.scoreTimeliness },
+      { name: 'Saran tindak lanjut', val: input.scoreFollowup },
+    ]
+
+    for (const s of scores) {
+      if (
+        typeof s.val !== 'number' ||
+        isNaN(s.val) ||
+        s.val < 1 ||
+        s.val > 5 ||
+        !Number.isInteger(s.val)
+      ) {
+        return { error: `Skor ${s.name} harus berupa angka bulat antara 1 hingga 5.` }
+      }
+    }
+
+    if (
+      input.meetingNumber !== undefined &&
+      input.meetingNumber !== null &&
+      input.meetingNumber !== 8 &&
+      input.meetingNumber !== 9
+    ) {
+      return { error: 'Pertemuan hanya boleh 8 atau 9.' }
+    }
+
+    const trimmedNotes = input.notes?.trim() || null
+    if (trimmedNotes && trimmedNotes.length > 2000) {
+      return { error: 'Catatan maksimal 2000 karakter.' }
+    }
+
+    const supabase = await createClient()
+
+    const { error } = await supabase
+      .from('progress_update_evaluations')
+      .update({
+        evaluation_date: input.evaluationDate,
+        meeting_number: input.meetingNumber || null,
+        score_accuracy: input.scoreAccuracy,
+        score_clarity: input.scoreClarity,
+        score_timeliness: input.scoreTimeliness,
+        score_followup: input.scoreFollowup,
+        notes: trimmedNotes,
+      })
+      .eq('id', input.id)
+
+    if (error) {
+      console.error('updateProgressUpdateAction error:', error)
+      return { error: error.message || 'Gagal memperbarui penilaian Update Progress.' }
+    }
+
+    if (input.traineeId) {
+      revalidatePath(`/trainer/trainees/${input.traineeId}`)
+    }
+
+    return { success: true, message: 'Penilaian Update Progress berhasil diperbarui.' }
+  } catch (error: unknown) {
+    console.error('updateProgressUpdateAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}
+
+export async function deleteProgressUpdateAction(
+  id: number,
+  traineeId?: string
+): Promise<ActionResponse> {
+  try {
+    await verifyActiveTrainer()
+
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from('progress_update_evaluations')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      console.error('deleteProgressUpdateAction error:', error)
+      return { error: error.message || 'Gagal menghapus penilaian Update Progress.' }
+    }
+
+    if (traineeId) {
+      revalidatePath(`/trainer/trainees/${traineeId}`)
+    }
+
+    return { success: true, message: 'Penilaian Update Progress berhasil dihapus.' }
+  } catch (error: unknown) {
+    console.error('deleteProgressUpdateAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}
+
+export interface CreateFinalProjectInput {
+  traineeTermId: number
+  evaluationDate?: string
+  result: 'meets_standard' | 'not_yet'
+  notes?: string | null
+  traineeId?: string
+}
+
+export async function createFinalProjectAction(
+  input: CreateFinalProjectInput
+): Promise<ActionResponse> {
+  try {
+    const trainer = await verifyActiveTrainer()
+
+    if (!input.traineeTermId) {
+      return { error: 'Term tidak valid.' }
+    }
+
+    if (input.result !== 'meets_standard' && input.result !== 'not_yet') {
+      return { error: 'Hasil evaluasi harus Sesuai standar atau Belum sesuai.' }
+    }
+
+    const trimmedNotes = input.notes?.trim() || null
+    if (input.result === 'not_yet' && !trimmedNotes) {
+      return { error: 'Catatan evaluasi wajib diisi jika hasil belum sesuai standar.' }
+    }
+
+    if (trimmedNotes && trimmedNotes.length > 2000) {
+      return { error: 'Catatan maksimal 2000 karakter.' }
+    }
+
+    const supabase = await createClient()
+
+    const { error } = await supabase.from('final_project_evaluations').insert({
+      trainee_term_id: input.traineeTermId,
+      evaluation_date: input.evaluationDate || undefined,
+      result: input.result,
+      notes: trimmedNotes,
+      evaluated_by: trainer.id,
+    })
+
+    if (error) {
+      console.error('createFinalProjectAction error:', error)
+      return { error: error.message || 'Gagal menyimpan penilaian Final Project.' }
+    }
+
+    if (input.traineeId) {
+      revalidatePath(`/trainer/trainees/${input.traineeId}`)
+    }
+
+    return { success: true, message: 'Penilaian Final Project berhasil disimpan.' }
+  } catch (error: unknown) {
+    console.error('createFinalProjectAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}
+
+export interface UpdateFinalProjectInput {
+  id: number
+  evaluationDate?: string
+  result: 'meets_standard' | 'not_yet'
+  notes?: string | null
+  traineeId?: string
+}
+
+export async function updateFinalProjectAction(
+  input: UpdateFinalProjectInput
+): Promise<ActionResponse> {
+  try {
+    await verifyActiveTrainer()
+
+    if (!input.id) {
+      return { error: 'ID penilaian tidak valid.' }
+    }
+
+    if (input.result !== 'meets_standard' && input.result !== 'not_yet') {
+      return { error: 'Hasil evaluasi harus Sesuai standar atau Belum sesuai.' }
+    }
+
+    const trimmedNotes = input.notes?.trim() || null
+    if (input.result === 'not_yet' && !trimmedNotes) {
+      return { error: 'Catatan evaluasi wajib diisi jika hasil belum sesuai standar.' }
+    }
+
+    if (trimmedNotes && trimmedNotes.length > 2000) {
+      return { error: 'Catatan maksimal 2000 karakter.' }
+    }
+
+    const supabase = await createClient()
+
+    const { error } = await supabase
+      .from('final_project_evaluations')
+      .update({
+        evaluation_date: input.evaluationDate,
+        result: input.result,
+        notes: trimmedNotes,
+      })
+      .eq('id', input.id)
+
+    if (error) {
+      console.error('updateFinalProjectAction error:', error)
+      return { error: error.message || 'Gagal memperbarui penilaian Final Project.' }
+    }
+
+    if (input.traineeId) {
+      revalidatePath(`/trainer/trainees/${input.traineeId}`)
+    }
+
+    return { success: true, message: 'Penilaian Final Project berhasil diperbarui.' }
+  } catch (error: unknown) {
+    console.error('updateFinalProjectAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}
+
+export async function deleteFinalProjectAction(
+  id: number,
+  traineeId?: string
+): Promise<ActionResponse> {
+  try {
+    await verifyActiveTrainer()
+
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from('final_project_evaluations')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      console.error('deleteFinalProjectAction error:', error)
+      return { error: error.message || 'Gagal menghapus penilaian Final Project.' }
+    }
+
+    if (traineeId) {
+      revalidatePath(`/trainer/trainees/${traineeId}`)
+    }
+
+    return { success: true, message: 'Penilaian Final Project berhasil dihapus.' }
+  } catch (error: unknown) {
+    console.error('deleteFinalProjectAction error:', error)
     const errMessage = error instanceof Error ? error.message : String(error)
     return { error: errMessage }
   }

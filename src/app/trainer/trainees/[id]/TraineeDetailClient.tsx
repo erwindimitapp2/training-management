@@ -15,6 +15,12 @@ import {
   setTrialReadinessAction,
   getTrialReadinessHistoryAction,
   deleteTrialClassAction,
+  createProgressUpdateAction,
+  updateProgressUpdateAction,
+  deleteProgressUpdateAction,
+  createFinalProjectAction,
+  updateFinalProjectAction,
+  deleteFinalProjectAction,
 } from '@/app/trainer/actions'
 import { ProgramLevel, TermStatus, ObservationResult } from '@/types/database'
 import { STATUS_LABELS, STATUS_STYLES, GOLD_BADGE_STYLE, isValidHttpUrl } from '@/lib/constants'
@@ -28,6 +34,7 @@ import { AssignTermModal, MasterTermItem } from '@/components/AssignTermModal'
 import { AssignTrialClassModal } from '@/components/AssignTrialClassModal'
 import { TrialClassDetailModal } from '@/components/TrialClassDetailModal'
 import { StarRating } from '@/components/StarRating'
+import { PROGRESS_UPDATE_CRITERIA, FINAL_PROJECT_RESULTS } from '@/lib/criteria'
 import {
   ArrowLeft,
   Lock,
@@ -116,6 +123,36 @@ export interface TermDetail {
     trainerName: string
   }>
   checkNotes?: CheckNoteItem[]
+  progressUpdates?: ProgressUpdateItem[]
+  finalProjects?: FinalProjectItem[]
+}
+
+export interface ProgressUpdateItem {
+  id: number
+  traineeTermId: number
+  evaluationDate: string
+  meetingNumber: 8 | 9 | null
+  scoreAccuracy: number
+  scoreClarity: number
+  scoreTimeliness: number
+  scoreFollowup: number
+  notes: string | null
+  evaluatedBy: string
+  evaluatorName: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface FinalProjectItem {
+  id: number
+  traineeTermId: number
+  evaluationDate: string
+  result: 'meets_standard' | 'not_yet'
+  notes: string | null
+  evaluatedBy: string
+  evaluatorName: string
+  createdAt: string
+  updatedAt: string
 }
 
 export interface TraineeDetailTrialClass {
@@ -234,7 +271,7 @@ export function TraineeDetailClient({
   )
 
   // Level tab state ('kinder' | 'junior' | 'trial_class')
-  const [levelTab, setLevelTab] = useState<'kinder' | 'junior' | 'trial_class'>(() => {
+  const [levelTab, setLevelTab] = useState<'kinder' | 'junior' | 'trial_class' | 'term_evaluation'>(() => {
     const hasKinder = terms.some((t) => t.level === 'kinder')
     const hasJunior = terms.some((t) => t.level === 'junior')
     if (!hasKinder && hasJunior) return 'junior'
@@ -374,6 +411,225 @@ export function TraineeDetailClient({
         setActiveStatusModal(null)
         setStatusNote('')
         setPrivateNote('')
+        setTimeout(() => setActionSuccess(null), 3500)
+      }
+    })
+  }
+
+  // =====================================================================
+  // TAHAP 2 PENILAIAN MODAL STATES (Progress Update & Final Project)
+  // =====================================================================
+  // Progress Update Modal
+  const [progressUpdateModal, setProgressUpdateModal] = useState<{
+    mode: 'create' | 'edit'
+    id?: number
+    traineeTermId: number
+    termName: string
+    evaluationDate: string
+    meetingNumber: 8 | 9 | null
+    scoreAccuracy: number
+    scoreClarity: number
+    scoreTimeliness: number
+    scoreFollowup: number
+    notes: string
+  } | null>(null)
+  const [isSubmittingProgress, startProgressTransition] = useTransition()
+
+  // Final Project Modal
+  const [finalProjectModal, setFinalProjectModal] = useState<{
+    mode: 'create' | 'edit'
+    id?: number
+    traineeTermId: number
+    termName: string
+    evaluationDate: string
+    result: 'meets_standard' | 'not_yet'
+    notes: string
+  } | null>(null)
+  const [isSubmittingFinalProject, startFinalProjectTransition] = useTransition()
+
+  // History Dialog state (for viewing all evaluations of a term)
+  const [historyModalTerm, setHistoryModalTerm] = useState<TermDetail | null>(null)
+  const [isDeletingEval, startDeleteEvalTransition] = useTransition()
+
+  // Helper open functions
+  const handleOpenCreateProgress = (ttId: number, termName: string) => {
+    setProgressUpdateModal({
+      mode: 'create',
+      traineeTermId: ttId,
+      termName,
+      evaluationDate: new Date().toISOString().split('T')[0],
+      meetingNumber: null,
+      scoreAccuracy: 5,
+      scoreClarity: 5,
+      scoreTimeliness: 5,
+      scoreFollowup: 5,
+      notes: '',
+    })
+    setActionError(null)
+  }
+
+  const handleOpenEditProgress = (item: ProgressUpdateItem, termName: string) => {
+    setProgressUpdateModal({
+      mode: 'edit',
+      id: item.id,
+      traineeTermId: item.traineeTermId,
+      termName,
+      evaluationDate: item.evaluationDate,
+      meetingNumber: item.meetingNumber,
+      scoreAccuracy: item.scoreAccuracy,
+      scoreClarity: item.scoreClarity,
+      scoreTimeliness: item.scoreTimeliness,
+      scoreFollowup: item.scoreFollowup,
+      notes: item.notes || '',
+    })
+    setActionError(null)
+  }
+
+  const handleSubmitProgressUpdate = () => {
+    if (!progressUpdateModal) return
+    setActionError(null)
+    setActionSuccess(null)
+
+    startProgressTransition(async () => {
+      if (progressUpdateModal.mode === 'create') {
+        const res = await createProgressUpdateAction({
+          traineeTermId: progressUpdateModal.traineeTermId,
+          evaluationDate: progressUpdateModal.evaluationDate,
+          meetingNumber: progressUpdateModal.meetingNumber,
+          scoreAccuracy: progressUpdateModal.scoreAccuracy,
+          scoreClarity: progressUpdateModal.scoreClarity,
+          scoreTimeliness: progressUpdateModal.scoreTimeliness,
+          scoreFollowup: progressUpdateModal.scoreFollowup,
+          notes: progressUpdateModal.notes,
+          traineeId: trainee.id,
+        })
+        if (res.error) {
+          setActionError(res.error)
+        } else {
+          setActionSuccess(res.message || 'Penilaian Update Progress berhasil disimpan.')
+          setProgressUpdateModal(null)
+          setTimeout(() => setActionSuccess(null), 3500)
+        }
+      } else if (progressUpdateModal.mode === 'edit' && progressUpdateModal.id) {
+        const res = await updateProgressUpdateAction({
+          id: progressUpdateModal.id,
+          evaluationDate: progressUpdateModal.evaluationDate,
+          meetingNumber: progressUpdateModal.meetingNumber,
+          scoreAccuracy: progressUpdateModal.scoreAccuracy,
+          scoreClarity: progressUpdateModal.scoreClarity,
+          scoreTimeliness: progressUpdateModal.scoreTimeliness,
+          scoreFollowup: progressUpdateModal.scoreFollowup,
+          notes: progressUpdateModal.notes,
+          traineeId: trainee.id,
+        })
+        if (res.error) {
+          setActionError(res.error)
+        } else {
+          setActionSuccess(res.message || 'Penilaian Update Progress berhasil diperbarui.')
+          setProgressUpdateModal(null)
+          setTimeout(() => setActionSuccess(null), 3500)
+        }
+      }
+    })
+  }
+
+  const handleDeleteProgressUpdate = (id: number) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus penilaian Update Progress ini?')) return
+    setActionError(null)
+    setActionSuccess(null)
+
+    startDeleteEvalTransition(async () => {
+      const res = await deleteProgressUpdateAction(id, trainee.id)
+      if (res.error) {
+        setActionError(res.error)
+      } else {
+        setActionSuccess(res.message || 'Penilaian Update Progress berhasil dihapus.')
+        setTimeout(() => setActionSuccess(null), 3500)
+      }
+    })
+  }
+
+  const handleOpenCreateFinalProject = (ttId: number, termName: string) => {
+    setFinalProjectModal({
+      mode: 'create',
+      traineeTermId: ttId,
+      termName,
+      evaluationDate: new Date().toISOString().split('T')[0],
+      result: 'meets_standard',
+      notes: '',
+    })
+    setActionError(null)
+  }
+
+  const handleOpenEditFinalProject = (item: FinalProjectItem, termName: string) => {
+    setFinalProjectModal({
+      mode: 'edit',
+      id: item.id,
+      traineeTermId: item.traineeTermId,
+      termName,
+      evaluationDate: item.evaluationDate,
+      result: item.result,
+      notes: item.notes || '',
+    })
+    setActionError(null)
+  }
+
+  const handleSubmitFinalProject = () => {
+    if (!finalProjectModal) return
+    if (finalProjectModal.result === 'not_yet' && !finalProjectModal.notes.trim()) {
+      setActionError('Catatan evaluasi wajib diisi jika hasil belum sesuai standar.')
+      return
+    }
+
+    setActionError(null)
+    setActionSuccess(null)
+
+    startFinalProjectTransition(async () => {
+      if (finalProjectModal.mode === 'create') {
+        const res = await createFinalProjectAction({
+          traineeTermId: finalProjectModal.traineeTermId,
+          evaluationDate: finalProjectModal.evaluationDate,
+          result: finalProjectModal.result,
+          notes: finalProjectModal.notes,
+          traineeId: trainee.id,
+        })
+        if (res.error) {
+          setActionError(res.error)
+        } else {
+          setActionSuccess(res.message || 'Penilaian Final Project berhasil disimpan.')
+          setFinalProjectModal(null)
+          setTimeout(() => setActionSuccess(null), 3500)
+        }
+      } else if (finalProjectModal.mode === 'edit' && finalProjectModal.id) {
+        const res = await updateFinalProjectAction({
+          id: finalProjectModal.id,
+          evaluationDate: finalProjectModal.evaluationDate,
+          result: finalProjectModal.result,
+          notes: finalProjectModal.notes,
+          traineeId: trainee.id,
+        })
+        if (res.error) {
+          setActionError(res.error)
+        } else {
+          setActionSuccess(res.message || 'Penilaian Final Project berhasil diperbarui.')
+          setFinalProjectModal(null)
+          setTimeout(() => setActionSuccess(null), 3500)
+        }
+      }
+    })
+  }
+
+  const handleDeleteFinalProject = (id: number) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus penilaian Final Project ini?')) return
+    setActionError(null)
+    setActionSuccess(null)
+
+    startDeleteEvalTransition(async () => {
+      const res = await deleteFinalProjectAction(id, trainee.id)
+      if (res.error) {
+        setActionError(res.error)
+      } else {
+        setActionSuccess(res.message || 'Penilaian Final Project berhasil dihapus.')
         setTimeout(() => setActionSuccess(null), 3500)
       }
     })
@@ -997,9 +1253,34 @@ export function TraineeDetailClient({
                 </span>
               )}
             </button>
+
+            <button
+              type="button"
+              onClick={() => setLevelTab('term_evaluation')}
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
+                levelTab === 'term_evaluation'
+                  ? 'bg-white dark:bg-slate-900 text-teal-600 dark:text-teal-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <span>Penilaian Term ({terms.length} Term)</span>
+            </button>
           </div>
 
-          {levelTab !== 'trial_class' ? (
+          {levelTab === 'term_evaluation' ? (
+            <div className="text-xs text-slate-500 dark:text-slate-400">
+              <span>Update Progress &amp; Final Project Video (Trainer Saja)</span>
+            </div>
+          ) : levelTab === 'trial_class' ? (
+            <button
+              type="button"
+              onClick={() => setIsAssignTrialOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer self-start sm:self-auto"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Tugaskan Trial Class</span>
+            </button>
+          ) : (
             <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-3">
               <span>
                 Self-Training Done:{' '}
@@ -1017,20 +1298,211 @@ export function TraineeDetailClient({
                 </strong>
               </span>
             </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setIsAssignTrialOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer self-start sm:self-auto"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Tugaskan Trial Class</span>
-            </button>
           )}
         </div>
 
         {/* Tab Content */}
-        {levelTab === 'trial_class' ? (
+        {levelTab === 'term_evaluation' ? (
+          /* TAB PENILAIAN TERM (UPDATE PROGRESS & FINAL PROJECT) */
+          <div className="space-y-4">
+            <div className="p-4 rounded-xl bg-teal-50 dark:bg-teal-950/30 border border-teal-200 dark:border-teal-800/60 text-xs text-teal-800 dark:text-teal-300 flex items-start gap-3 shadow-xs">
+              <Sparkles className="w-5 h-5 text-teal-600 dark:text-teal-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-teal-900 dark:text-teal-200">
+                  Penilaian Kompetensi Pasca Self-Training (Trainer Saja)
+                </p>
+                <p className="mt-0.5 text-teal-700 dark:text-teal-400 leading-relaxed">
+                  Menilai kemampuan instruktur dalam <strong>Update Progress ke Orang Tua</strong> (pertemuan 8/9 tiap term) dan standardisasi <strong>Video Final Project</strong>. Penilaian ini bersifat evaluatif independen dan hanya dapat diakses oleh Trainer.
+                </p>
+              </div>
+            </div>
+
+            {terms.length === 0 ? (
+              <div className="p-10 text-center rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+                  Belum ada term yang di-assign untuk trainee ini. Assign term terlebih dahulu untuk memberikan penilaian.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsAssignModalOpen(true)}
+                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>Assign Term Sekarang</span>
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {terms.map((t) => {
+                  const ttId = t.traineeTerm?.id
+                  const updates = t.progressUpdates || []
+                  const projects = t.finalProjects || []
+                  const latestUpdate = updates.length > 0 ? updates[0] : null
+                  const latestProject = projects.length > 0 ? projects[0] : null
+
+                  const avgUpdateScore = latestUpdate
+                    ? (latestUpdate.scoreAccuracy +
+                        latestUpdate.scoreClarity +
+                        latestUpdate.scoreTimeliness +
+                        latestUpdate.scoreFollowup) /
+                      4
+                    : null
+
+                  return (
+                    <div
+                      key={t.termId}
+                      className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between gap-4"
+                    >
+                      <div className="space-y-4">
+                        {/* Term Header */}
+                        <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-3">
+                          <div>
+                            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                              {t.level === 'kinder' ? 'Kinder' : 'Junior'}
+                            </span>
+                            <h4 className="font-bold text-slate-900 dark:text-white text-base mt-1">
+                              {t.name}
+                            </h4>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setHistoryModalTerm(t)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                            title="Lihat seluruh riwayat penilaian term ini"
+                          >
+                            <History className="w-3.5 h-3.5" />
+                            <span>Riwayat ({updates.length + projects.length})</span>
+                          </button>
+                        </div>
+
+                        {/* Sub-card 1: Update Progress */}
+                        <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold text-xs text-slate-700 dark:text-slate-300">
+                              Update Progress ke Orang Tua
+                            </span>
+                            {latestUpdate && avgUpdateScore !== null ? (
+                              <div className="flex items-center gap-1 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded-full border border-amber-200/60 dark:border-amber-800/60">
+                                <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                                <span className="font-bold text-xs text-amber-700 dark:text-amber-400">
+                                  {avgUpdateScore.toFixed(1)}
+                                </span>
+                                <span className="text-[10px] text-amber-600/70 dark:text-amber-400/70">/ 5.0</span>
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-slate-400 italic">Belum dinilai</span>
+                            )}
+                          </div>
+
+                          {latestUpdate ? (
+                            <div className="space-y-1.5 pt-1">
+                              <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                                <span>
+                                  {latestUpdate.meetingNumber
+                                    ? `Pertemuan ${latestUpdate.meetingNumber}`
+                                    : 'Pertemuan umum'}
+                                </span>
+                                <span>
+                                  {new Date(latestUpdate.evaluationDate).toLocaleDateString('id-ID', {
+                                    day: 'numeric',
+                                    month: 'short',
+                                    year: 'numeric',
+                                  })}
+                                </span>
+                              </div>
+                              {latestUpdate.notes && (
+                                <p className="text-[11px] text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700/60 line-clamp-2">
+                                  "{latestUpdate.notes}"
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-slate-400">
+                              Evaluasi penyampaian progres anak di pertemuan 8 atau 9.
+                            </p>
+                          )}
+
+                          {ttId && (
+                            <div className="pt-1.5 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenCreateProgress(ttId, t.name)}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-600 hover:text-teal-700 dark:text-teal-400 cursor-pointer"
+                              >
+                                <Plus className="w-3 h-3" />
+                                <span>{latestUpdate ? 'Nilai Ulang / Tambah' : 'Nilai Update Progress'}</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Sub-card 2: Final Project */}
+                        <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold text-xs text-slate-700 dark:text-slate-300">
+                              Video Final Project
+                            </span>
+                            {latestProject ? (
+                              <span
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                  latestProject.result === 'meets_standard'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
+                                    : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800'
+                                }`}
+                              >
+                                {latestProject.result === 'meets_standard'
+                                  ? 'Sesuai Standar'
+                                  : 'Belum Sesuai'}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-slate-400 italic">Belum dinilai</span>
+                            )}
+                          </div>
+
+                          {latestProject ? (
+                            <div className="space-y-1.5 pt-1">
+                              <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                                <span>Dinilai {new Date(latestProject.evaluationDate).toLocaleDateString('id-ID', {
+                                  day: 'numeric',
+                                  month: 'short',
+                                  year: 'numeric',
+                                })}</span>
+                                <span className="text-[10px] text-slate-400">oleh {latestProject.evaluatorName}</span>
+                              </div>
+                              {latestProject.notes && (
+                                <p className="text-[11px] text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700/60 line-clamp-2">
+                                  "{latestProject.notes}"
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-slate-400">
+                              Evaluasi kualitas video project akhir yang diedit oleh instruktur.
+                            </p>
+                          )}
+
+                          {ttId && (
+                            <div className="pt-1.5 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenCreateFinalProject(ttId, t.name)}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-600 hover:text-teal-700 dark:text-teal-400 cursor-pointer"
+                              >
+                                <Plus className="w-3 h-3" />
+                                <span>{latestProject ? 'Nilai Ulang / Tambah' : 'Nilai Final Project'}</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        ) : levelTab === 'trial_class' ? (
           /* TRIAL CLASS TAB CONTENT */
           <div className="space-y-4">
             {/* Summary Cards */}
@@ -2679,6 +3151,528 @@ export function TraineeDetailClient({
           window.location.reload()
         }}
       />
+
+      {/* MODAL NILAI / EDIT UPDATE PROGRESS */}
+      {progressUpdateModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 border border-slate-200 dark:border-slate-800 shadow-xl space-y-4 my-8">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                  {progressUpdateModal.mode === 'create'
+                    ? 'Penilaian Update Progress ke Orang Tua'
+                    : 'Edit Penilaian Update Progress'}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Term: <span className="font-semibold text-slate-700 dark:text-slate-300">{progressUpdateModal.termName}</span>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setProgressUpdateModal(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Tanggal Penilaian */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Tanggal Evaluasi
+                  </label>
+                  <input
+                    type="date"
+                    value={progressUpdateModal.evaluationDate}
+                    onChange={(e) =>
+                      setProgressUpdateModal({
+                        ...progressUpdateModal,
+                        evaluationDate: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+
+                {/* Pertemuan Ke- (8 atau 9) */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Pertemuan (Opsional)
+                  </label>
+                  <select
+                    value={progressUpdateModal.meetingNumber ?? ''}
+                    onChange={(e) =>
+                      setProgressUpdateModal({
+                        ...progressUpdateModal,
+                        meetingNumber: e.target.value ? (Number(e.target.value) as 8 | 9) : null,
+                      })
+                    }
+                    className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  >
+                    <option value="">-- Pilih Pertemuan --</option>
+                    <option value="8">Pertemuan 8</option>
+                    <option value="9">Pertemuan 9</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* 4 Kriteria Bintang */}
+              <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500 block">
+                  Kriteria Penilaian (1-5 Bintang)
+                </span>
+
+                {PROGRESS_UPDATE_CRITERIA.map((crit) => {
+                  const currentValue =
+                    crit.key === 'score_accuracy'
+                      ? progressUpdateModal.scoreAccuracy
+                      : crit.key === 'score_clarity'
+                        ? progressUpdateModal.scoreClarity
+                        : crit.key === 'score_timeliness'
+                          ? progressUpdateModal.scoreTimeliness
+                          : progressUpdateModal.scoreFollowup
+
+                  return (
+                    <div
+                      key={crit.key}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/30 border border-slate-200/60 dark:border-slate-700/60"
+                    >
+                      <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                        {crit.label}
+                      </span>
+                      <StarRating
+                        value={currentValue}
+                        onChange={(val) => {
+                          setProgressUpdateModal({
+                            ...progressUpdateModal,
+                            [crit.key === 'score_accuracy'
+                              ? 'scoreAccuracy'
+                              : crit.key === 'score_clarity'
+                                ? 'scoreClarity'
+                                : crit.key === 'score_timeliness'
+                                  ? 'scoreTimeliness'
+                                  : 'scoreFollowup']: val,
+                          })
+                        }}
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Catatan Trainer (opsional, maks 2000) */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Catatan Trainer (Opsional)
+                  </label>
+                  <span className="text-[10px] text-slate-400">
+                    {progressUpdateModal.notes.length}/2000
+                  </span>
+                </div>
+                <textarea
+                  rows={3}
+                  maxLength={2000}
+                  value={progressUpdateModal.notes}
+                  onChange={(e) =>
+                    setProgressUpdateModal({
+                      ...progressUpdateModal,
+                      notes: e.target.value,
+                    })
+                  }
+                  placeholder="Catatan atau masukan untuk instruktur..."
+                  className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setProgressUpdateModal(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingProgress}
+                onClick={handleSubmitProgressUpdate}
+                className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isSubmittingProgress && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>{progressUpdateModal.mode === 'create' ? 'Simpan Penilaian' : 'Perbarui Penilaian'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL NILAI / EDIT FINAL PROJECT */}
+      {finalProjectModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 border border-slate-200 dark:border-slate-800 shadow-xl space-y-4 my-8">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                  {finalProjectModal.mode === 'create'
+                    ? 'Penilaian Video Final Project'
+                    : 'Edit Penilaian Final Project'}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Term: <span className="font-semibold text-slate-700 dark:text-slate-300">{finalProjectModal.termName}</span>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFinalProjectModal(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Tanggal Penilaian */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Tanggal Evaluasi
+                </label>
+                <input
+                  type="date"
+                  value={finalProjectModal.evaluationDate}
+                  onChange={(e) =>
+                    setFinalProjectModal({
+                      ...finalProjectModal,
+                      evaluationDate: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+
+              {/* Hasil Penilaian: Sesuai standar / Belum sesuai */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Hasil Evaluasi Video
+                </label>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {FINAL_PROJECT_RESULTS.map((res) => (
+                    <button
+                      key={res.key}
+                      type="button"
+                      onClick={() =>
+                        setFinalProjectModal({
+                          ...finalProjectModal,
+                          result: res.key as 'meets_standard' | 'not_yet',
+                        })
+                      }
+                      className={`p-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                        finalProjectModal.result === res.key
+                          ? res.key === 'meets_standard'
+                            ? 'bg-emerald-50 border-emerald-500 text-emerald-700 dark:bg-emerald-950/60 dark:border-emerald-600 dark:text-emerald-300 shadow-xs'
+                            : 'bg-rose-50 border-rose-500 text-rose-700 dark:bg-rose-950/60 dark:border-rose-600 dark:text-rose-300 shadow-xs'
+                          : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          res.key === 'meets_standard' ? 'bg-emerald-500' : 'bg-rose-500'
+                        }`}
+                      />
+                      <span>{res.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Catatan Evaluasi (wajib jika not_yet) */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Catatan Evaluasi{' '}
+                    {finalProjectModal.result === 'not_yet' ? (
+                      <span className="text-rose-500 font-bold">* (Wajib jika belum sesuai)</span>
+                    ) : (
+                      <span className="text-slate-400 font-normal">(Opsional)</span>
+                    )}
+                  </label>
+                  <span className="text-[10px] text-slate-400">
+                    {finalProjectModal.notes.length}/2000
+                  </span>
+                </div>
+                <textarea
+                  rows={3}
+                  maxLength={2000}
+                  value={finalProjectModal.notes}
+                  onChange={(e) =>
+                    setFinalProjectModal({
+                      ...finalProjectModal,
+                      notes: e.target.value,
+                    })
+                  }
+                  placeholder={
+                    finalProjectModal.result === 'not_yet'
+                      ? 'Jelaskan aspek yang belum sesuai standar video...'
+                      : 'Catatan tambahan terkait video final project...'
+                  }
+                  className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setFinalProjectModal(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingFinalProject}
+                onClick={handleSubmitFinalProject}
+                className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isSubmittingFinalProject && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>{finalProjectModal.mode === 'create' ? 'Simpan Penilaian' : 'Perbarui Penilaian'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL RIWAYAT PENILAIAN TERM */}
+      {historyModalTerm && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-2xl w-full p-6 border border-slate-200 dark:border-slate-800 shadow-xl space-y-4 my-8">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                  Riwayat Penilaian: {historyModalTerm.name}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Daftar seluruh penilaian Update Progress dan Final Project untuk term ini
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHistoryModalTerm(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-1">
+              {/* Seksi Update Progress */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                    Update Progress Orang Tua ({(historyModalTerm.progressUpdates || []).length})
+                  </h4>
+                  {historyModalTerm.traineeTerm?.id && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const ttId = historyModalTerm.traineeTerm!.id
+                        const termName = historyModalTerm.name
+                        setHistoryModalTerm(null)
+                        handleOpenCreateProgress(ttId, termName)
+                      }}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-600 hover:text-teal-700 dark:text-teal-400 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Tambah Penilaian</span>
+                    </button>
+                  )}
+                </div>
+
+                {(historyModalTerm.progressUpdates || []).length === 0 ? (
+                  <p className="text-xs text-slate-400 italic bg-slate-50 dark:bg-slate-800/30 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+                    Belum ada riwayat penilaian Update Progress.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {(historyModalTerm.progressUpdates || []).map((p) => {
+                      const avg =
+                        (p.scoreAccuracy + p.scoreClarity + p.scoreTimeliness + p.scoreFollowup) / 4
+
+                      return (
+                        <div
+                          key={p.id}
+                          className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60 space-y-2"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded-full border border-amber-200/60 dark:border-amber-800/60">
+                                <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                                <span className="font-bold text-xs text-amber-700 dark:text-amber-400">
+                                  {avg.toFixed(1)}
+                                </span>
+                              </div>
+                              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                {p.meetingNumber ? `Pertemuan ${p.meetingNumber}` : 'Pertemuan Umum'}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const termName = historyModalTerm.name
+                                  setHistoryModalTerm(null)
+                                  handleOpenEditProgress(p, termName)
+                                }}
+                                className="p-1.5 rounded-lg text-slate-500 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/40 transition-colors cursor-pointer"
+                                title="Edit penilaian ini"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isDeletingEval}
+                                onClick={() => {
+                                  handleDeleteProgressUpdate(p.id)
+                                  setHistoryModalTerm(null)
+                                }}
+                                className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                                title="Hapus penilaian ini"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[10px] text-slate-500 dark:text-slate-400">
+                            <div>Akurasi: <strong>{p.scoreAccuracy}/5</strong></div>
+                            <div>Kejelasan: <strong>{p.scoreClarity}/5</strong></div>
+                            <div>Waktu: <strong>{p.scoreTimeliness}/5</strong></div>
+                            <div>Followup: <strong>{p.scoreFollowup}/5</strong></div>
+                          </div>
+
+                          {p.notes && (
+                            <p className="text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700/60">
+                              "{p.notes}"
+                            </p>
+                          )}
+
+                          <div className="text-[10px] text-slate-400 flex items-center justify-between pt-0.5">
+                            <span>Evaluator: {p.evaluatorName}</span>
+                            <span>{new Date(p.evaluationDate).toLocaleDateString('id-ID', { dateStyle: 'medium' })}</span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Seksi Final Project */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                    Video Final Project ({(historyModalTerm.finalProjects || []).length})
+                  </h4>
+                  {historyModalTerm.traineeTerm?.id && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const ttId = historyModalTerm.traineeTerm!.id
+                        const termName = historyModalTerm.name
+                        setHistoryModalTerm(null)
+                        handleOpenCreateFinalProject(ttId, termName)
+                      }}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-600 hover:text-teal-700 dark:text-teal-400 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Tambah Penilaian</span>
+                    </button>
+                  )}
+                </div>
+
+                {(historyModalTerm.finalProjects || []).length === 0 ? (
+                  <p className="text-xs text-slate-400 italic bg-slate-50 dark:bg-slate-800/30 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+                    Belum ada riwayat penilaian Final Project.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {(historyModalTerm.finalProjects || []).map((f) => (
+                      <div
+                        key={f.id}
+                        className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60 space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                              f.result === 'meets_standard'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
+                                : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800'
+                            }`}
+                          >
+                            {f.result === 'meets_standard' ? 'Sesuai Standar' : 'Belum Sesuai'}
+                          </span>
+
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const termName = historyModalTerm.name
+                                setHistoryModalTerm(null)
+                                handleOpenEditFinalProject(f, termName)
+                              }}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/40 transition-colors cursor-pointer"
+                              title="Edit penilaian ini"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isDeletingEval}
+                              onClick={() => {
+                                handleDeleteFinalProject(f.id)
+                                setHistoryModalTerm(null)
+                              }}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                              title="Hapus penilaian ini"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {f.notes && (
+                          <p className="text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700/60">
+                            "{f.notes}"
+                          </p>
+                        )}
+
+                        <div className="text-[10px] text-slate-400 flex items-center justify-between pt-0.5">
+                          <span>Evaluator: {f.evaluatorName}</span>
+                          <span>{new Date(f.evaluationDate).toLocaleDateString('id-ID', { dateStyle: 'medium' })}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-3 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setHistoryModalTerm(null)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

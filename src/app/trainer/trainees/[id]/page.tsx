@@ -203,6 +203,59 @@ export default async function TraineeDetailPage({ params }: PageProps) {
       }
     }
 
+    // 9b. Fetch progress_update_evaluations and final_project_evaluations (trainer only)
+    let progressUpdateList: Array<{
+      id: number
+      trainee_term_id: number
+      evaluation_date: string
+      meeting_number: 8 | 9 | null
+      score_accuracy: number
+      score_clarity: number
+      score_timeliness: number
+      score_followup: number
+      notes: string | null
+      evaluated_by: string
+      created_at: string
+      updated_at: string
+      evaluator: { name: string } | null
+    }> = []
+
+    let finalProjectList: Array<{
+      id: number
+      trainee_term_id: number
+      evaluation_date: string
+      result: 'meets_standard' | 'not_yet'
+      notes: string | null
+      evaluated_by: string
+      created_at: string
+      updated_at: string
+      evaluator: { name: string } | null
+    }> = []
+
+    if (traineeTermIds.length > 0) {
+      const { data: pueData } = await supabase
+        .from('progress_update_evaluations')
+        .select('id, trainee_term_id, evaluation_date, meeting_number, score_accuracy, score_clarity, score_timeliness, score_followup, notes, evaluated_by, created_at, updated_at, evaluator:users!progress_update_evaluations_evaluated_by_fkey(name)')
+        .in('trainee_term_id', traineeTermIds)
+        .order('evaluation_date', { ascending: false })
+        .order('created_at', { ascending: false })
+
+      if (pueData) {
+        progressUpdateList = pueData as unknown as typeof progressUpdateList
+      }
+
+      const { data: fpeData } = await supabase
+        .from('final_project_evaluations')
+        .select('id, trainee_term_id, evaluation_date, result, notes, evaluated_by, created_at, updated_at, evaluator:users!final_project_evaluations_evaluated_by_fkey(name)')
+        .in('trainee_term_id', traineeTermIds)
+        .order('evaluation_date', { ascending: false })
+        .order('created_at', { ascending: false })
+
+      if (fpeData) {
+        finalProjectList = fpeData as unknown as typeof finalProjectList
+      }
+    }
+
     // 10. Fetch trial_readiness for this trainee
     const { data: readinessData } = await supabase
       .from('trial_readiness')
@@ -365,6 +418,36 @@ export default async function TraineeDetailPage({ params }: PageProps) {
         history,
         observations,
         checkNotes,
+        progressUpdates: progressUpdateList
+          .filter((p) => p.trainee_term_id === tt.id)
+          .map((p) => ({
+            id: p.id,
+            traineeTermId: p.trainee_term_id,
+            evaluationDate: p.evaluation_date,
+            meetingNumber: p.meeting_number,
+            scoreAccuracy: p.score_accuracy,
+            scoreClarity: p.score_clarity,
+            scoreTimeliness: p.score_timeliness,
+            scoreFollowup: p.score_followup,
+            notes: p.notes,
+            evaluatedBy: p.evaluated_by,
+            evaluatorName: p.evaluator?.name || 'Trainer',
+            createdAt: p.created_at,
+            updatedAt: p.updated_at,
+          })),
+        finalProjects: finalProjectList
+          .filter((f) => f.trainee_term_id === tt.id)
+          .map((f) => ({
+            id: f.id,
+            traineeTermId: f.trainee_term_id,
+            evaluationDate: f.evaluation_date,
+            result: f.result,
+            notes: f.notes,
+            evaluatedBy: f.evaluated_by,
+            evaluatorName: f.evaluator?.name || 'Trainer',
+            createdAt: f.created_at,
+            updatedAt: f.updated_at,
+          })),
       }
     })
 

@@ -5,6 +5,10 @@ import { TermStatus } from '@/types/database'
 import { getTrialLevelConfig } from '@/lib/levels'
 import { Sparkles, Award, GraduationCap, BookOpen, Layers, CheckCircle2 } from 'lucide-react'
 import { DashboardTabsClient, TermCardItem } from './DashboardTabsClient'
+import {
+  TraineeTrialClassSection,
+  TraineeTrialClassItem,
+} from '@/components/TraineeTrialClassSection'
 
 export const dynamic = 'force-dynamic'
 
@@ -81,6 +85,26 @@ export default async function TraineeDashboardPage() {
       .eq('is_ready', true)
 
     const readyLevels = readinessData || []
+
+    // 4c. Fetch trial_classes for this trainee (ONLY from trial_classes, NEVER trial_class_evaluations)
+    const { data: traineeTrialClassesData } = await supabase
+      .from('trial_classes')
+      .select('id, trial_date, level, student_name, placement, trainee_notes, status, submitted_at, created_at')
+      .eq('trainee_id', user.id)
+      .order('trial_date', { ascending: false })
+      .order('created_at', { ascending: false })
+
+    const traineeTrialClasses: TraineeTrialClassItem[] = (traineeTrialClassesData || []).map((tc) => ({
+      id: tc.id,
+      trialDate: tc.trial_date,
+      level: tc.level,
+      studentName: tc.student_name,
+      placement: tc.placement,
+      traineeNotes: tc.trainee_notes,
+      status: tc.status as any,
+      submittedAt: tc.submitted_at,
+      createdAt: tc.created_at,
+    }))
 
     // 5. Build term cards data - ONLY assigned terms
     const mapTermData = (term: (typeof termsList)[number]): TermCardItem => {
@@ -217,6 +241,8 @@ export default async function TraineeDashboardPage() {
 
               {trialReadinessBadgeSection}
 
+              <TraineeTrialClassSection items={traineeTrialClasses} />
+
               {/* Empty State Banner */}
               <div className="bg-white dark:bg-slate-900 rounded-3xl p-12 text-center border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
                 <div className="w-14 h-14 rounded-2xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 mx-auto flex items-center justify-center font-bold mb-2">
@@ -267,7 +293,7 @@ export default async function TraineeDashboardPage() {
 
                     <div className="flex items-center justify-between text-[11px] text-indigo-100 pt-1 border-t border-white/10">
                       <span>{totalLessonsStudied} / {totalAssignedLessons} Lesson</span>
-                      <span>{totalReadyForTrial} / {totalAssignedTerms} Ready for Trial</span>
+                      <span>{totalReadyForTrial} / {totalAssignedTerms} Self-Training Done</span>
                     </div>
                   </div>
                 </div>
@@ -325,7 +351,7 @@ export default async function TraineeDashboardPage() {
                 )}
 
                 <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-                  <span className="text-xs text-slate-400 block mb-1">Ready for Trial</span>
+                  <span className="text-xs text-slate-400 block mb-1">Self-Training Done</span>
                   <div className="flex items-baseline gap-1.5">
                     <span className="text-xl sm:text-2xl font-bold text-emerald-600 dark:text-emerald-400">
                       {totalReadyForTrial}
@@ -343,6 +369,8 @@ export default async function TraineeDashboardPage() {
                   )}
                 </div>
               </section>
+
+              <TraineeTrialClassSection items={traineeTrialClasses} />
 
               {/* Kinder and Junior Sections with Tabs */}
               <DashboardTabsClient

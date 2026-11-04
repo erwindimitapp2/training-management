@@ -295,7 +295,7 @@ export function TraineeListClient({
 
                 <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60">
                   <span className="block text-[10px] text-slate-500 dark:text-slate-400 font-medium mb-0.5">
-                    Ready for Trial
+                    Self-Training Done
                   </span>
                   <span className="text-base font-bold text-emerald-600 dark:text-emerald-400">
                     {summary.readyForTrialCount}{' '}
@@ -528,7 +528,7 @@ export function TraineeListClient({
                   <th className="py-3.5 px-4">Cabang</th>
                   <th className="py-3.5 px-4">Jumlah Term Di-assign</th>
                   <th className="py-3.5 px-4">Progress</th>
-                  <th className="py-3.5 px-4">Ready for Trial</th>
+                  <th className="py-3.5 px-4">Self-Training Done</th>
                   <th className="py-3.5 px-4">Layak Mengajar</th>
                   <th className="py-3.5 px-4">Akun</th>
                   <th className="py-3.5 px-4 text-right">Aksi</th>
@@ -615,7 +615,7 @@ export function TraineeListClient({
                         )}
                       </td>
 
-                      {/* Ready for Trial count */}
+                      {/* Self-Training Done count */}
                       <td className="py-3.5 px-4">
                         <span
                           className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${

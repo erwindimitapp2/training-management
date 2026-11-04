@@ -218,26 +218,76 @@ export default async function TraineeDetailPage({ params }: PageProps) {
       changedAt: r.changed_at,
     }))
 
-    // 11. Fetch trial_classes for this trainee
+    // 11. Fetch trial_classes with evaluations for this trainee
     const { data: traineeTrialClassesData } = await supabase
       .from('trial_classes')
-      .select('id, trial_date, student_name, level, placement, score_conduct, score_placement, score_parent_update, notes, created_at')
+      .select(`
+        id,
+        trial_date,
+        student_name,
+        level,
+        placement,
+        trainee_notes,
+        status,
+        submitted_at,
+        created_at,
+        trial_class_evaluations(
+          id,
+          score_conduct,
+          score_placement,
+          score_parent_update,
+          trainer_placement,
+          trainer_notes,
+          evaluated_at,
+          evaluator:users!trial_class_evaluations_evaluated_by_fkey(name)
+        )
+      `)
       .eq('trainee_id', traineeId)
       .order('trial_date', { ascending: false })
+      .order('created_at', { ascending: false })
 
-    const trialClasses = (traineeTrialClassesData || []).map((tc) => ({
-      id: tc.id,
-      traineeId,
-      trialDate: tc.trial_date,
-      studentName: tc.student_name,
-      level: tc.level,
-      placement: tc.placement,
-      scoreConduct: tc.score_conduct,
-      scorePlacement: tc.score_placement,
-      scoreParentUpdate: tc.score_parent_update,
-      notes: tc.notes,
-      createdAt: tc.created_at,
-    }))
+    const trialClasses = (traineeTrialClassesData || []).map((tc) => {
+      const evalRaw = tc.trial_class_evaluations as unknown
+      const evalObj = Array.isArray(evalRaw) ? evalRaw[0] : evalRaw
+      const typedEval = evalObj as {
+        id: number
+        score_conduct: number
+        score_placement: number
+        score_parent_update: number
+        trainer_placement?: string | null
+        trainer_notes?: string | null
+        evaluated_at: string
+        evaluator?: { name: string } | null
+      } | null
+
+      return {
+        id: tc.id,
+        traineeId,
+        traineeName: traineeData.name,
+        username: traineeData.username,
+        branchName: traineeBranchName,
+        trialDate: tc.trial_date,
+        studentName: tc.student_name,
+        level: tc.level,
+        placement: tc.placement,
+        traineeNotes: tc.trainee_notes,
+        status: tc.status as any,
+        submittedAt: tc.submitted_at,
+        createdAt: tc.created_at,
+        evaluation: typedEval
+          ? {
+              id: typedEval.id,
+              scoreConduct: typedEval.score_conduct,
+              scorePlacement: typedEval.score_placement,
+              scoreParentUpdate: typedEval.score_parent_update,
+              trainerPlacement: typedEval.trainer_placement,
+              trainerNotes: typedEval.trainer_notes,
+              evaluatedAt: typedEval.evaluated_at,
+              evaluatorName: typedEval.evaluator?.name,
+            }
+          : null,
+      }
+    })
 
     // 12. Assemble into TermDetail[] - ONLY assigned terms
     const assignedTermsList = termsList.filter((term) =>

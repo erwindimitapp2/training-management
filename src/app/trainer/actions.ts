@@ -447,7 +447,7 @@ export async function changeTermStatusAction(
     } else if (action === 'need_review') {
       msg = 'Catatan Need Review berhasil dikirim. Term dikembalikan ke In Self-Training.'
     } else if (action === 'ready_for_trial') {
-      msg = 'Term disetujui Ready for Trial Class!'
+      msg = 'Term disetujui Self-Training Done!'
     }
 
     return {
@@ -942,26 +942,22 @@ export async function getTrialReadinessHistoryAction(traineeId: string) {
 }
 
 /**
- * 10. Trial Classes Actions (Penilaian Trial Class)
+ * 10. Trial Classes Actions (Tahap 1b: Penugasan, Koreksi, Penilaian, Penghapusan)
  */
-export interface TrialClassInput {
-  id?: number
+export interface AssignTrialClassInput {
   traineeId: string
   trialDate: string
-  studentName?: string | null
   level: string
+  studentName?: string | null
   placement?: string | null
-  scoreConduct: number
-  scorePlacement: number
-  scoreParentUpdate: number
-  notes?: string | null
+  traineeNotes?: string | null
 }
 
-export async function saveTrialClassAction(
-  input: TrialClassInput
+export async function assignTrialClassAction(
+  input: AssignTrialClassInput
 ): Promise<ActionResponse & { trialClassId?: number }> {
   try {
-    const trainer = await verifyActiveTrainer()
+    await verifyActiveTrainer()
 
     if (!input.traineeId) {
       return { error: 'Trainee wajib dipilih.' }
@@ -978,8 +974,131 @@ export async function saveTrialClassAction(
     if (input.studentName && input.studentName.trim().length > 100) {
       return { error: 'Nama calon murid maksimal 100 karakter.' }
     }
-    if (input.notes && input.notes.trim().length > 2000) {
-      return { error: 'Catatan maksimal 2000 karakter.' }
+    if (input.traineeNotes && input.traineeNotes.trim().length > 2000) {
+      return { error: 'Catatan trainee maksimal 2000 karakter.' }
+    }
+
+    const supabase = await createClient()
+    const { data, error } = await supabase.rpc('assign_trial_class', {
+      p_trainee_id: input.traineeId,
+      p_trial_date: input.trialDate,
+      p_level: input.level,
+      p_student_name: input.studentName?.trim() || null,
+      p_placement: input.placement?.trim() || null,
+      p_trainee_notes: input.traineeNotes?.trim() || null,
+    })
+
+    if (error) {
+      console.error('assign_trial_class RPC error:', error)
+      return { error: error.message || 'Gagal menugaskan Trial Class.' }
+    }
+
+    revalidatePath('/trainer/trial-class')
+    revalidatePath(`/trainer/trainees/${input.traineeId}`)
+
+    return {
+      success: true,
+      message: 'Trial Class berhasil ditugaskan.',
+      trialClassId: data,
+    }
+  } catch (error: unknown) {
+    console.error('assignTrialClassAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}
+
+export interface UpdateTrialClassReportInput {
+  trialClassId: number
+  traineeId: string
+  trialDate: string
+  studentName?: string | null
+  placement?: string | null
+  traineeNotes?: string | null
+}
+
+export async function updateTrialClassReportByTrainerAction(
+  input: UpdateTrialClassReportInput
+): Promise<ActionResponse> {
+  try {
+    await verifyActiveTrainer()
+
+    if (!input.trialClassId) {
+      return { error: 'ID Trial Class tidak valid.' }
+    }
+    if (!input.trialDate || !/^\d{4}-\d{2}-\d{2}$/.test(input.trialDate)) {
+      return { error: 'Tanggal Trial Class wajib diisi dengan format YYYY-MM-DD.' }
+    }
+    if (input.studentName && input.studentName.trim().length > 100) {
+      return { error: 'Nama calon murid maksimal 100 karakter.' }
+    }
+    if (input.traineeNotes && input.traineeNotes.trim().length > 2000) {
+      return { error: 'Catatan trainee maksimal 2000 karakter.' }
+    }
+
+    const supabase = await createClient()
+
+    const { data: tc, error: fetchErr } = await supabase
+      .from('trial_classes')
+      .select('level')
+      .eq('id', input.trialClassId)
+      .single()
+
+    if (fetchErr || !tc) {
+      return { error: 'Data Trial Class tidak ditemukan.' }
+    }
+
+    if (input.placement && !isValidPlacementForLevel(tc.level, input.placement)) {
+      return { error: `Placement '${input.placement}' tidak valid untuk level '${tc.level}'.` }
+    }
+
+    const { error: updateErr } = await supabase
+      .from('trial_classes')
+      .update({
+        trial_date: input.trialDate,
+        student_name: input.studentName?.trim() || null,
+        placement: input.placement?.trim() || null,
+        trainee_notes: input.traineeNotes?.trim() || null,
+      })
+      .eq('id', input.trialClassId)
+
+    if (updateErr) {
+      console.error('update trial_classes error:', updateErr)
+      return { error: updateErr.message || 'Gagal memperbarui laporan Trial Class.' }
+    }
+
+    revalidatePath('/trainer/trial-class')
+    revalidatePath(`/trainer/trainees/${input.traineeId}`)
+
+    return {
+      success: true,
+      message: 'Laporan Trial Class berhasil diperbarui.',
+    }
+  } catch (error: unknown) {
+    console.error('updateTrialClassReportByTrainerAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}
+
+export interface EvaluateTrialClassInput {
+  trialClassId: number
+  traineeId: string
+  scoreConduct: number
+  scorePlacement: number
+  scoreParentUpdate: number
+  trainerPlacement?: string | null
+  trainerNotes?: string | null
+}
+
+export async function evaluateTrialClassAction(
+  input: EvaluateTrialClassInput
+): Promise<ActionResponse> {
+  try {
+    await verifyActiveTrainer()
+
+    if (!input.trialClassId) {
+      return { error: 'ID Trial Class tidak valid.' }
     }
 
     const scores = [
@@ -999,45 +1118,38 @@ export async function saveTrialClassAction(
       }
     }
 
+    if (input.trainerNotes && input.trainerNotes.trim().length > 2000) {
+      return { error: 'Catatan trainer maksimal 2000 karakter.' }
+    }
+
     const supabase = await createClient()
 
-    if (input.id) {
-      const { error } = await supabase
+    if (input.trainerPlacement) {
+      const { data: tc, error: fetchErr } = await supabase
         .from('trial_classes')
-        .update({
-          trial_date: input.trialDate,
-          student_name: input.studentName?.trim() || null,
-          level: input.level as 'kinder' | 'junior' | 'coder',
-          placement: input.placement?.trim() || null,
-          score_conduct: input.scoreConduct,
-          score_placement: input.scorePlacement,
-          score_parent_update: input.scoreParentUpdate,
-          notes: input.notes?.trim() || null,
-        })
-        .eq('id', input.id)
-
-      if (error) {
-        console.error('Update trial_classes error:', error)
-        return { error: error.message || 'Gagal memperbarui data Trial Class.' }
+        .select('level')
+        .eq('id', input.trialClassId)
+        .single()
+      if (fetchErr || !tc) {
+        return { error: 'Data Trial Class tidak ditemukan.' }
       }
-    } else {
-      const { error } = await supabase.from('trial_classes').insert({
-        trainee_id: input.traineeId,
-        trial_date: input.trialDate,
-        student_name: input.studentName?.trim() || null,
-        level: input.level as 'kinder' | 'junior' | 'coder',
-        placement: input.placement?.trim() || null,
-        score_conduct: input.scoreConduct,
-        score_placement: input.scorePlacement,
-        score_parent_update: input.scoreParentUpdate,
-        notes: input.notes?.trim() || null,
-        created_by: trainer.id,
-      })
-
-      if (error) {
-        console.error('Insert trial_classes error:', error)
-        return { error: error.message || 'Gagal menyimpan data Trial Class.' }
+      if (!isValidPlacementForLevel(tc.level, input.trainerPlacement)) {
+        return { error: `Placement '${input.trainerPlacement}' tidak sesuai dengan level trial class.` }
       }
+    }
+
+    const { error } = await supabase.rpc('evaluate_trial_class', {
+      p_trial_class_id: input.trialClassId,
+      p_conduct: input.scoreConduct,
+      p_placement_score: input.scorePlacement,
+      p_parent_update: input.scoreParentUpdate,
+      p_trainer_placement: input.trainerPlacement?.trim() || null,
+      p_trainer_notes: input.trainerNotes?.trim() || null,
+    })
+
+    if (error) {
+      console.error('evaluate_trial_class RPC error:', error)
+      return { error: error.message || 'Gagal menyimpan penilaian Trial Class.' }
     }
 
     revalidatePath('/trainer/trial-class')
@@ -1045,12 +1157,44 @@ export async function saveTrialClassAction(
 
     return {
       success: true,
-      message: input.id
-        ? 'Penilaian Trial Class berhasil diperbarui!'
-        : 'Penilaian Trial Class berhasil disimpan!',
+      message: 'Penilaian Trial Class berhasil disimpan!',
     }
   } catch (error: unknown) {
-    console.error('saveTrialClassAction error:', error)
+    console.error('evaluateTrialClassAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}
+
+export async function deleteTrialEvaluationAction(
+  trialClassId: number,
+  traineeId?: string
+): Promise<ActionResponse> {
+  try {
+    await verifyActiveTrainer()
+
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from('trial_class_evaluations')
+      .delete()
+      .eq('trial_class_id', trialClassId)
+
+    if (error) {
+      console.error('delete trial_class_evaluations error:', error)
+      return { error: error.message || 'Gagal menghapus penilaian Trial Class.' }
+    }
+
+    revalidatePath('/trainer/trial-class')
+    if (traineeId) {
+      revalidatePath(`/trainer/trainees/${traineeId}`)
+    }
+
+    return {
+      success: true,
+      message: 'Penilaian Trainer berhasil dihapus. Status trial class dikembalikan.',
+    }
+  } catch (error: unknown) {
+    console.error('deleteTrialEvaluationAction error:', error)
     const errMessage = error instanceof Error ? error.message : String(error)
     return { error: errMessage }
   }
@@ -1068,7 +1212,7 @@ export async function deleteTrialClassAction(
 
     if (error) {
       console.error('deleteTrialClassAction error:', error)
-      return { error: error.message || 'Gagal menghapus penilaian Trial Class.' }
+      return { error: error.message || 'Gagal menghapus Trial Class.' }
     }
 
     revalidatePath('/trainer/trial-class')
@@ -1076,7 +1220,7 @@ export async function deleteTrialClassAction(
       revalidatePath(`/trainer/trainees/${traineeId}`)
     }
 
-    return { success: true, message: 'Penilaian Trial Class berhasil dihapus.' }
+    return { success: true, message: 'Trial Class berhasil dihapus.' }
   } catch (error: unknown) {
     console.error('deleteTrialClassAction error:', error)
     const errMessage = error instanceof Error ? error.message : String(error)

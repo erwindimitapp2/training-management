@@ -19,8 +19,14 @@ import {
 import { ProgramLevel, TermStatus, ObservationResult } from '@/types/database'
 import { STATUS_LABELS, STATUS_STYLES, GOLD_BADGE_STYLE, isValidHttpUrl } from '@/lib/constants'
 import { TRIAL_LEVELS, getTrialLevelConfig } from '@/lib/levels'
+import {
+  TRIAL_CLASS_STATUS_LABELS,
+  TRIAL_CLASS_STATUS_STYLES,
+  TrialClassStatus,
+} from '@/lib/status-labels'
 import { AssignTermModal, MasterTermItem } from '@/components/AssignTermModal'
-import { TrialClassModal, ExistingTrialClass } from '@/components/TrialClassModal'
+import { AssignTrialClassModal } from '@/components/AssignTrialClassModal'
+import { TrialClassDetailModal } from '@/components/TrialClassDetailModal'
 import { StarRating } from '@/components/StarRating'
 import {
   ArrowLeft,
@@ -115,15 +121,27 @@ export interface TermDetail {
 export interface TraineeDetailTrialClass {
   id: number
   traineeId: string
+  traineeName: string
+  username: string
+  branchName?: string
   trialDate: string
-  studentName?: string | null
   level: string
+  studentName?: string | null
   placement?: string | null
-  scoreConduct: number
-  scorePlacement: number
-  scoreParentUpdate: number
-  notes?: string | null
+  traineeNotes?: string | null
+  status: TrialClassStatus
+  submittedAt?: string | null
   createdAt: string
+  evaluation?: {
+    id: number
+    scoreConduct: number
+    scorePlacement: number
+    scoreParentUpdate: number
+    trainerPlacement?: string | null
+    trainerNotes?: string | null
+    evaluatedAt: string
+    evaluatorName?: string
+  } | null
 }
 
 export interface TraineeDetailTrialReadiness {
@@ -325,22 +343,9 @@ export function TraineeDetailClient({
     }
   }
 
-  // Trial classes modal & actions
-  const [isTrialClassModalOpen, setIsTrialClassModalOpen] = useState(false)
-  const [editingTrialClass, setEditingTrialClass] = useState<ExistingTrialClass | null>(null)
-  const [isDeletingTrialClass, startDeletingTrialClass] = useTransition()
-
-  const handleDeleteTrialClass = (id: number) => {
-    if (!window.confirm('Apakah Anda yakin ingin menghapus data penilaian Trial Class ini?')) return
-    startDeletingTrialClass(async () => {
-      const res = await deleteTrialClassAction(id, trainee.id)
-      if (res.error) {
-        setActionError(res.error)
-      } else {
-        window.location.reload()
-      }
-    })
-  }
+  // Trial classes modal states
+  const [isAssignTrialOpen, setIsAssignTrialOpen] = useState(false)
+  const [detailTrialItem, setDetailTrialItem] = useState<TraineeDetailTrialClass | null>(null)
 
   const handleStatusAction = () => {
     if (!activeStatusModal) return
@@ -546,20 +551,25 @@ export function TraineeDetailClient({
   const activeLevelTerms = levelTab === 'kinder' ? kinderTerms : juniorTerms
 
   const trialClassCount = trialClasses.length
+  const evaluatedTrials = trialClasses.filter(
+    (tc) => tc.status === 'evaluated' && tc.evaluation
+  )
+  const evaluatedCount = evaluatedTrials.length
+
   const avgConduct =
-    trialClassCount > 0
-      ? trialClasses.reduce((s, c) => s + c.scoreConduct, 0) / trialClassCount
+    evaluatedCount > 0
+      ? evaluatedTrials.reduce((s, c) => s + (c.evaluation?.scoreConduct || 0), 0) / evaluatedCount
       : 0
   const avgPlacement =
-    trialClassCount > 0
-      ? trialClasses.reduce((s, c) => s + c.scorePlacement, 0) / trialClassCount
+    evaluatedCount > 0
+      ? evaluatedTrials.reduce((s, c) => s + (c.evaluation?.scorePlacement || 0), 0) / evaluatedCount
       : 0
   const avgParentUpdate =
-    trialClassCount > 0
-      ? trialClasses.reduce((s, c) => s + c.scoreParentUpdate, 0) / trialClassCount
+    evaluatedCount > 0
+      ? evaluatedTrials.reduce((s, c) => s + (c.evaluation?.scoreParentUpdate || 0), 0) / evaluatedCount
       : 0
   const overallTrialAvg =
-    trialClassCount > 0
+    evaluatedCount > 0
       ? (avgConduct + avgPlacement + avgParentUpdate) / 3
       : 0
 
@@ -992,7 +1002,7 @@ export function TraineeDetailClient({
           {levelTab !== 'trial_class' ? (
             <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-3">
               <span>
-                Ready for Trial:{' '}
+                Self-Training Done:{' '}
                 <strong className="text-emerald-600 dark:text-emerald-400">
                   {levelTab === 'kinder' ? kinderReadyForTrial : juniorReadyForTrial}/
                   {levelTab === 'kinder' ? kinderTerms.length : juniorTerms.length} Term
@@ -1010,14 +1020,11 @@ export function TraineeDetailClient({
           ) : (
             <button
               type="button"
-              onClick={() => {
-                setEditingTrialClass(null)
-                setIsTrialClassModalOpen(true)
-              }}
+              onClick={() => setIsAssignTrialOpen(true)}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer self-start sm:self-auto"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Tambah Trial Class</span>
+              <span>Tugaskan Trial Class</span>
             </button>
           )}
         </div>
@@ -1031,27 +1038,39 @@ export function TraineeDetailClient({
               <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
                 <span className="text-slate-400 block mb-0.5">Rata-rata Conduct</span>
                 <span className="text-base font-bold text-slate-800 dark:text-slate-200">
-                  {trialClassCount > 0 ? avgConduct.toFixed(1) : '-'} <span className="text-xs text-slate-400 font-normal">/ 5</span>
+                  {evaluatedCount > 0 ? avgConduct.toFixed(1) : '-'} <span className="text-xs text-slate-400 font-normal">/ 5</span>
+                </span>
+                <span className="text-[10px] text-slate-400 block mt-0.5">
+                  {evaluatedCount} sesi dinilai
                 </span>
               </div>
               <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
                 <span className="text-slate-400 block mb-0.5">Rata-rata Placement</span>
                 <span className="text-base font-bold text-slate-800 dark:text-slate-200">
-                  {trialClassCount > 0 ? avgPlacement.toFixed(1) : '-'} <span className="text-xs text-slate-400 font-normal">/ 5</span>
+                  {evaluatedCount > 0 ? avgPlacement.toFixed(1) : '-'} <span className="text-xs text-slate-400 font-normal">/ 5</span>
+                </span>
+                <span className="text-[10px] text-slate-400 block mt-0.5">
+                  {evaluatedCount} sesi dinilai
                 </span>
               </div>
               <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
                 <span className="text-slate-400 block mb-0.5">Rata-rata Update Ortu</span>
                 <span className="text-base font-bold text-slate-800 dark:text-slate-200">
-                  {trialClassCount > 0 ? avgParentUpdate.toFixed(1) : '-'} <span className="text-xs text-slate-400 font-normal">/ 5</span>
+                  {evaluatedCount > 0 ? avgParentUpdate.toFixed(1) : '-'} <span className="text-xs text-slate-400 font-normal">/ 5</span>
+                </span>
+                <span className="text-[10px] text-slate-400 block mt-0.5">
+                  {evaluatedCount} sesi dinilai
                 </span>
               </div>
               <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 shadow-xs">
                 <span className="text-amber-800 dark:text-amber-300 block mb-0.5 font-medium">Total Skor Rata-rata</span>
                 <span className="text-base font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
                   <Star className="w-4 h-4 fill-amber-500 text-amber-500" />
-                  <span>{trialClassCount > 0 ? overallTrialAvg.toFixed(1) : '-'}</span>
+                  <span>{evaluatedCount > 0 ? overallTrialAvg.toFixed(1) : '-'}</span>
                   <span className="text-xs font-normal text-amber-700/70 dark:text-amber-400/70">/ 5.0</span>
+                </span>
+                <span className="text-[10px] text-amber-800/70 dark:text-amber-400/70 block mt-0.5">
+                  {evaluatedCount} dari {trialClassCount} sesi dinilai
                 </span>
               </div>
             </div>
@@ -1063,18 +1082,15 @@ export function TraineeDetailClient({
                   Belum ada sesi Trial Class untuk trainee ini.
                 </p>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-                  Klik tombol di bawah untuk menambahkan penilaian sesi Trial Class pertama.
+                  Klik tombol di bawah untuk menugaskan sesi Trial Class pertama.
                 </p>
                 <button
                   type="button"
-                  onClick={() => {
-                    setEditingTrialClass(null)
-                    setIsTrialClassModalOpen(true)
-                  }}
+                  onClick={() => setIsAssignTrialOpen(true)}
                   className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
-                  <span>Tambah Sesi Trial Class Pertama</span>
+                  <span>Tugaskan Trial Class Pertama</span>
                 </button>
               </div>
             ) : (
@@ -1083,85 +1099,106 @@ export function TraineeDetailClient({
                   <table className="w-full text-xs text-left">
                     <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 uppercase tracking-wider text-[11px] border-b border-slate-200 dark:border-slate-800">
                       <tr>
-                        <th className="px-4 py-3 font-semibold">Tanggal</th>
-                        <th className="px-4 py-3 font-semibold">Murid</th>
-                        <th className="px-4 py-3 font-semibold">Level &amp; Placement</th>
-                        <th className="px-4 py-3 font-semibold">Conduct</th>
-                        <th className="px-4 py-3 font-semibold">Placement</th>
-                        <th className="px-4 py-3 font-semibold">Update Ortu</th>
-                        <th className="px-4 py-3 font-semibold">Total</th>
-                        <th className="px-4 py-3 font-semibold">Catatan</th>
+                        <th className="px-4 py-3 font-semibold whitespace-nowrap">Tanggal</th>
+                        <th className="px-4 py-3 font-semibold">Level</th>
+                        <th className="px-4 py-3 font-semibold">Calon Murid</th>
+                        <th className="px-4 py-3 font-semibold">Placement Trainee</th>
+                        <th className="px-4 py-3 font-semibold">Placement Trainer</th>
+                        <th className="px-4 py-3 font-semibold">Status</th>
+                        <th className="px-4 py-3 font-semibold">Nilai (3 Skor)</th>
                         <th className="px-4 py-3 font-semibold text-right">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {trialClasses.map((tc) => {
-                        const total = ((tc.scoreConduct + tc.scorePlacement + tc.scoreParentUpdate) / 3).toFixed(1)
                         const lvlConfig = getTrialLevelConfig(tc.level)
+                        const statusStyle = TRIAL_CLASS_STATUS_STYLES[tc.status]
+                        const hasBothPlacements = Boolean(
+                          tc.placement && tc.evaluation?.trainerPlacement
+                        )
+                        const isMatch =
+                          hasBothPlacements &&
+                          tc.placement === tc.evaluation?.trainerPlacement
+
+                        const avgScore = tc.evaluation
+                          ? (
+                              (tc.evaluation.scoreConduct +
+                                tc.evaluation.scorePlacement +
+                                tc.evaluation.scoreParentUpdate) /
+                              3
+                            ).toFixed(1)
+                          : null
 
                         return (
                           <tr key={tc.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
                             <td className="px-4 py-3 font-medium text-slate-900 dark:text-white whitespace-nowrap">
                               {tc.trialDate}
                             </td>
-                            <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
-                              {tc.studentName || '-'}
-                            </td>
                             <td className="px-4 py-3 whitespace-nowrap">
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 mr-1.5">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                                 {lvlConfig?.label || tc.level}
                               </span>
-                              <span className="text-slate-500">{tc.placement || '-'}</span>
+                            </td>
+                            <td className="px-4 py-3 text-slate-700 dark:text-slate-300 font-medium">
+                              {tc.studentName || <span className="text-slate-400 italic">Belum diisi</span>}
+                            </td>
+                            <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
+                              {tc.placement || <span className="text-slate-400 italic">-</span>}
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">
-                              <StarRating value={tc.scoreConduct} readOnly size="sm" />
+                              {tc.evaluation?.trainerPlacement ? (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-medium text-slate-900 dark:text-white">
+                                    {tc.evaluation.trainerPlacement}
+                                  </span>
+                                  {hasBothPlacements && (
+                                    <span
+                                      className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                                        isMatch
+                                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                          : 'bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300'
+                                      }`}
+                                    >
+                                      {isMatch ? 'Sesuai' : 'Berbeda'}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-slate-400 italic">-</span>
+                              )}
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">
-                              <StarRating value={tc.scorePlacement} readOnly size="sm" />
+                              {statusStyle && (
+                                <span
+                                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border}`}
+                                >
+                                  <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
+                                  <span>{TRIAL_CLASS_STATUS_LABELS[tc.status]}</span>
+                                </span>
+                              )}
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">
-                              <StarRating value={tc.scoreParentUpdate} readOnly size="sm" />
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap font-bold text-amber-600 dark:text-amber-400">
-                              {total} / 5.0
-                            </td>
-                            <td className="px-4 py-3 max-w-xs text-slate-600 dark:text-slate-400 truncate">
-                              {tc.notes || '-'}
+                              {tc.evaluation ? (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-bold text-amber-600 dark:text-amber-400">
+                                    {avgScore} / 5.0
+                                  </span>
+                                  <span className="text-[10px] text-slate-400">
+                                    ({tc.evaluation.scoreConduct},{tc.evaluation.scorePlacement},{tc.evaluation.scoreParentUpdate})
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-slate-400 italic">Belum dinilai</span>
+                              )}
                             </td>
                             <td className="px-4 py-3 text-right whitespace-nowrap">
-                              <div className="flex items-center justify-end gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setEditingTrialClass({
-                                      id: tc.id,
-                                      traineeId: tc.traineeId,
-                                      trialDate: tc.trialDate,
-                                      studentName: tc.studentName,
-                                      level: tc.level,
-                                      placement: tc.placement,
-                                      scoreConduct: tc.scoreConduct,
-                                      scorePlacement: tc.scorePlacement,
-                                      scoreParentUpdate: tc.scoreParentUpdate,
-                                      notes: tc.notes,
-                                    })
-                                    setIsTrialClassModalOpen(true)
-                                  }}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                                  title="Edit Penilaian"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={isDeletingTrialClass}
-                                  onClick={() => handleDeleteTrialClass(tc.id)}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50"
-                                  title="Hapus Penilaian"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setDetailTrialItem(tc)}
+                                className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
+                              >
+                                {tc.status === 'evaluated' ? 'Lihat / Edit' : 'Detail & Nilai'}
+                              </button>
                             </td>
                           </tr>
                         )
@@ -1365,7 +1402,7 @@ export function TraineeDetailClient({
                                 <span>Need Review</span>
                               </button>
 
-                              {/* Ready for Trial Class Button */}
+                              {/* Self-Training Done Button */}
                               <button
                                 id={`btn-ready-for-trial-term-${term.termId}`}
                                 type="button"
@@ -1383,7 +1420,7 @@ export function TraineeDetailClient({
                                 className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold tracking-wide shadow-md hover:shadow-emerald-600/25 transition-all flex items-center gap-1.5 cursor-pointer"
                               >
                                 <CheckCircle2 className="w-4 h-4" />
-                                <span>Ready for Trial Class</span>
+                                <span>Self-Training Done</span>
                               </button>
                             </div>
                           </div>
@@ -1809,7 +1846,7 @@ export function TraineeDetailClient({
                                         )}
                                         {cn.outcome === 'ready_for_trial' && (
                                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200">
-                                            Ready for Trial Class
+                                            Self-Training Done
                                           </span>
                                         )}
                                         {cn.outcome === null && (
@@ -2031,7 +2068,7 @@ export function TraineeDetailClient({
                       ? 'Mulai Understanding Check'
                       : activeStatusModal.action === 'need_review'
                         ? 'Kembalikan ke Need Review'
-                        : 'Setujui: Ready for Trial Class'}
+                        : 'Setujui: Self-Training Done'}
                   </h3>
                   <p className="text-[11px] text-slate-500 font-medium">
                     {activeStatusModal.termName} • Trainee: @{trainee.username} ({trainee.name})
@@ -2128,7 +2165,7 @@ export function TraineeDetailClient({
               <div className="space-y-3">
                 <div className="text-xs text-slate-600 dark:text-slate-300 space-y-2">
                   <p>
-                    Trainee dinyatakan telah menguasai materi <strong>{activeStatusModal.termName}</strong> dengan baik dan siap mengikuti tahap <strong>Trial Class</strong>.
+                    Trainee dinyatakan telah menguasai materi <strong>{activeStatusModal.termName}</strong> dengan baik dan status term diubah menjadi <strong>Self-Training Done</strong>.
                   </p>
                   <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300 text-xs">
                     Term berikutnya (Term {activeStatusModal.sortOrder + 1}) akan <strong>otomatis terbuka</strong> untuk trainee ini.
@@ -2216,7 +2253,7 @@ export function TraineeDetailClient({
                       ? 'Mulai Understanding Check'
                       : activeStatusModal.action === 'need_review'
                         ? 'Kirim Need Review'
-                        : 'Konfirmasi Ready for Trial'}
+                        : 'Konfirmasi Self-Training Done'}
                   </span>
                 )}
               </button>
@@ -2612,13 +2649,11 @@ export function TraineeDetailClient({
         masterTerms={masterTerms}
       />
 
-      {/* TRIAL CLASS MODAL */}
-      <TrialClassModal
-        isOpen={isTrialClassModalOpen}
-        onClose={() => {
-          setIsTrialClassModalOpen(false)
-          setEditingTrialClass(null)
-        }}
+      {/* ASSIGN TRIAL CLASS MODAL */}
+      <AssignTrialClassModal
+        isOpen={isAssignTrialOpen}
+        onClose={() => setIsAssignTrialOpen(false)}
+        defaultTraineeId={trainee.id}
         trainees={[
           {
             id: trainee.id,
@@ -2628,11 +2663,19 @@ export function TraineeDetailClient({
             branchName: trainee.branchName,
           },
         ]}
-        defaultTraineeId={trainee.id}
-        initialData={editingTrialClass}
         onSuccess={() => {
-          setIsTrialClassModalOpen(false)
-          setEditingTrialClass(null)
+          setIsAssignTrialOpen(false)
+          window.location.reload()
+        }}
+      />
+
+      {/* DETAIL & EVALUATION TRIAL CLASS MODAL */}
+      <TrialClassDetailModal
+        isOpen={Boolean(detailTrialItem)}
+        onClose={() => setDetailTrialItem(null)}
+        item={detailTrialItem}
+        onSuccess={() => {
+          setDetailTrialItem(null)
           window.location.reload()
         }}
       />

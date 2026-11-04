@@ -225,7 +225,7 @@ export function DashboardTabsClient({
               </div>
               <div className="h-7 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block" />
               <div className="text-right">
-                <span className="text-slate-400 block text-[11px]">Ready for Trial</span>
+                <span className="text-slate-400 block text-[11px]">Self-Training Done</span>
                 <span className="font-bold text-emerald-600 dark:text-emerald-400">
                   {kinderReadyForTrial} / {kinderTerms.length} Term
                 </span>
@@ -282,7 +282,7 @@ export function DashboardTabsClient({
               </div>
               <div className="h-7 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block" />
               <div className="text-right">
-                <span className="text-slate-400 block text-[11px]">Ready for Trial</span>
+                <span className="text-slate-400 block text-[11px]">Self-Training Done</span>
                 <span className="font-bold text-emerald-600 dark:text-emerald-400">
                   {juniorReadyForTrial} / {juniorTerms.length} Term
                 </span>

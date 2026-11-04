@@ -195,3 +195,58 @@ export async function submitReadyForCheckAction(
     return { error: errMessage }
   }
 }
+
+/**
+ * Submit Trial Report (Trainee only)
+ * - Trainee fills report: student name, placement, optional notes
+ * - Calls RPC submit_trial_report
+ */
+export async function submitTrialReportAction(
+  trialClassId: number,
+  studentName: string,
+  placement: string,
+  notes?: string | null
+): Promise<ActionResult> {
+  try {
+    const { supabase } = await verifyActiveTrainee()
+
+    const trimmedName = studentName?.trim()
+    const trimmedPlacement = placement?.trim()
+
+    if (!trimmedName) {
+      return { error: 'Nama calon murid wajib diisi.' }
+    }
+    if (trimmedName.length > 100) {
+      return { error: 'Nama calon murid maksimal 100 karakter.' }
+    }
+    if (!trimmedPlacement) {
+      return { error: 'Placement wajib dipilih.' }
+    }
+    if (notes && notes.trim().length > 2000) {
+      return { error: 'Catatan maksimal 2000 karakter.' }
+    }
+
+    const { error } = await supabase.rpc('submit_trial_report', {
+      p_trial_class_id: trialClassId,
+      p_student_name: trimmedName,
+      p_placement: trimmedPlacement,
+      p_notes: notes?.trim() || null,
+    })
+
+    if (error) {
+      console.error('submit_trial_report RPC error:', error)
+      return { error: error.message || 'Gagal mengirim laporan Trial Class.' }
+    }
+
+    revalidatePath('/dashboard')
+
+    return {
+      success: true,
+      message: 'Laporan Trial Class berhasil disimpan.',
+    }
+  } catch (error: unknown) {
+    console.error('submitTrialReportAction error:', error)
+    const errMessage = error instanceof Error ? error.message : String(error)
+    return { error: errMessage }
+  }
+}

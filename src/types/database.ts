@@ -381,10 +381,9 @@ export interface Database {
           student_name: string | null
           level: 'kinder' | 'junior' | 'coder'
           placement: string | null
-          score_conduct: number
-          score_placement: number
-          score_parent_update: number
-          notes: string | null
+          trainee_notes: string | null
+          status: 'assigned' | 'awaiting_evaluation' | 'evaluated'
+          submitted_at: string | null
           created_by: string
           created_at: string
           updated_at: string
@@ -396,11 +395,10 @@ export interface Database {
           student_name?: string | null
           level: 'kinder' | 'junior' | 'coder'
           placement?: string | null
-          score_conduct: number
-          score_placement: number
-          score_parent_update: number
-          notes?: string | null
-          created_by: string
+          trainee_notes?: string | null
+          status?: 'assigned' | 'awaiting_evaluation' | 'evaluated'
+          submitted_at?: string | null
+          created_by?: string
           created_at?: string
           updated_at?: string
         }
@@ -411,10 +409,9 @@ export interface Database {
           student_name?: string | null
           level?: 'kinder' | 'junior' | 'coder'
           placement?: string | null
-          score_conduct?: number
-          score_placement?: number
-          score_parent_update?: number
-          notes?: string | null
+          trainee_notes?: string | null
+          status?: 'assigned' | 'awaiting_evaluation' | 'evaluated'
+          submitted_at?: string | null
           created_by?: string
           created_at?: string
           updated_at?: string
@@ -430,6 +427,60 @@ export interface Database {
           {
             foreignKeyName: "trial_classes_created_by_fkey"
             columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      trial_class_evaluations: {
+        Row: {
+          id: number
+          trial_class_id: number
+          score_conduct: number
+          score_placement: number
+          score_parent_update: number
+          trainer_placement: string | null
+          trainer_notes: string | null
+          evaluated_by: string
+          evaluated_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          trial_class_id: number
+          score_conduct: number
+          score_placement: number
+          score_parent_update: number
+          trainer_placement?: string | null
+          trainer_notes?: string | null
+          evaluated_by: string
+          evaluated_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          trial_class_id?: number
+          score_conduct?: number
+          score_placement?: number
+          score_parent_update?: number
+          trainer_placement?: string | null
+          trainer_notes?: string | null
+          evaluated_by?: string
+          evaluated_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trial_class_evaluations_trial_class_id_fkey"
+            columns: ["trial_class_id"]
+            isOneToOne: true
+            referencedRelation: "trial_classes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trial_class_evaluations_evaluated_by_fkey"
+            columns: ["evaluated_by"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
@@ -566,6 +617,37 @@ export interface Database {
           p_trainee_id: string
           p_level: string
           p_ready: boolean
+        }
+        Returns: void
+      }
+      assign_trial_class: {
+        Args: {
+          p_trainee_id: string
+          p_trial_date: string
+          p_level: string
+          p_student_name?: string | null
+          p_placement?: string | null
+          p_trainee_notes?: string | null
+        }
+        Returns: number
+      }
+      submit_trial_report: {
+        Args: {
+          p_trial_class_id: number
+          p_student_name: string
+          p_placement: string
+          p_notes?: string | null
+        }
+        Returns: void
+      }
+      evaluate_trial_class: {
+        Args: {
+          p_trial_class_id: number
+          p_conduct: number
+          p_placement_score: number
+          p_parent_update: number
+          p_trainer_placement?: string | null
+          p_trainer_notes?: string | null
         }
         Returns: void
       }

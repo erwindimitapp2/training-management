@@ -1,4 +1,5 @@
 import { TermStatus } from '@/types/database'
+import { TERM_STATUS_LABELS } from '@/lib/status-labels'
 
 export const INTERNAL_EMAIL_DOMAIN = '@trainee.internal'
 
@@ -10,13 +11,7 @@ export function emailToUsername(email: string): string {
   return email.replace(INTERNAL_EMAIL_DOMAIN, '')
 }
 
-export const STATUS_LABELS: Record<TermStatus, string> = {
-  in_self_training: 'In Self-Training',
-  ready_for_check: 'Ready for Check',
-  understanding_check: 'Understanding Check',
-  need_review: 'Need Review',
-  ready_for_trial: 'Ready for Trial Class',
-}
+export const STATUS_LABELS: Record<TermStatus, string> = TERM_STATUS_LABELS
 
 export const STATUS_STYLES: Record<
   TermStatus,

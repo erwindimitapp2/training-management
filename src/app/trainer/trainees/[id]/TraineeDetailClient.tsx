@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useMemo } from 'react'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   resetTraineePasswordAction,
@@ -191,6 +192,8 @@ export interface TraineeDetailTrialReadiness {
 }
 
 interface TraineeDetailClientProps {
+  initialTab?: string
+  initialSubTab?: string
   trainee: {
     id: string
     name: string
@@ -210,6 +213,8 @@ interface TraineeDetailClientProps {
 }
 
 export function TraineeDetailClient({
+  initialTab,
+  initialSubTab,
   trainee,
   currentTrainerId,
   branches,
@@ -218,6 +223,9 @@ export function TraineeDetailClient({
   trialReadiness = [],
   trialClasses = [],
 }: TraineeDetailClientProps) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const [isActive, setIsActive] = useState(trainee.isActive)
   const [branchName, setBranchName] = useState(trainee.branchName)
   const [branchId, setBranchId] = useState<number | null>(trainee.branchId)
@@ -270,13 +278,11 @@ export function TraineeDetailClient({
     null
   )
 
-  // Level tab state ('kinder' | 'junior' | 'trial_class')
-  const [levelTab, setLevelTab] = useState<'kinder' | 'junior' | 'trial_class' | 'term_evaluation'>(() => {
+  // Navigation state (Tingkat 1: Progress Belajar vs Penilaian)
+  const defaultSubForLearning = useMemo(() => {
     const hasKinder = terms.some((t) => t.level === 'kinder')
     const hasJunior = terms.some((t) => t.level === 'junior')
     if (!hasKinder && hasJunior) return 'junior'
-    if (!hasKinder && !hasJunior && trialClasses.length > 0) return 'trial_class'
-
     const attentionTerm = terms.find(
       (t) =>
         t.traineeTerm?.status === 'ready_for_check' ||
@@ -292,7 +298,61 @@ export function TraineeDetailClient({
       if (!hasKinderAttention) return 'junior'
     }
     return 'kinder'
-  })
+  }, [terms])
+
+  const initialMainTabParsed: 'progress' | 'penilaian' = (() => {
+    const fromUrl = searchParams?.get('tab') || initialTab
+    if (fromUrl === 'penilaian' || fromUrl === 'trial_class' || fromUrl === 'term_evaluation') return 'penilaian'
+    return 'progress'
+  })()
+
+  const initialSubTabParsed: 'kinder' | 'junior' | 'trial_class' | 'per_term' = (() => {
+    const tabUrl = searchParams?.get('tab') || initialTab
+    const subUrl = searchParams?.get('sub') || initialSubTab
+    if (tabUrl === 'penilaian') {
+      if (subUrl === 'trial-class' || subUrl === 'trial_class') return 'trial_class'
+      return 'per_term'
+    }
+    if (tabUrl === 'trial_class') return 'trial_class'
+    if (tabUrl === 'term_evaluation') return 'per_term'
+    if (subUrl === 'junior' || subUrl === 'kinder') return subUrl
+    return defaultSubForLearning
+  })()
+
+  const [mainTab, setMainTab] = useState<'progress' | 'penilaian'>(initialMainTabParsed)
+  const [subTab, setSubTab] = useState<'kinder' | 'junior' | 'trial_class' | 'per_term'>(initialSubTabParsed)
+
+  const updateTabUrl = (newMain: 'progress' | 'penilaian', newSub: 'kinder' | 'junior' | 'trial_class' | 'per_term') => {
+    const params = new URLSearchParams(searchParams?.toString() || '')
+    params.set('tab', newMain)
+    const subParamValue = newSub === 'trial_class' ? 'trial-class' : newSub === 'per_term' ? 'per-term' : newSub
+    params.set('sub', subParamValue)
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }
+
+  const handleSelectMainTab = (newMain: 'progress' | 'penilaian') => {
+    setMainTab(newMain)
+    let newSub = subTab
+    if (newMain === 'progress') {
+      if (subTab !== 'kinder' && subTab !== 'junior') {
+        newSub = defaultSubForLearning
+        setSubTab(newSub)
+      }
+    } else {
+      if (subTab !== 'trial_class' && subTab !== 'per_term') {
+        newSub = 'per_term'
+        setSubTab(newSub)
+      }
+    }
+    updateTabUrl(newMain, newSub)
+  }
+
+  const handleSelectSubTab = (newSub: 'kinder' | 'junior' | 'trial_class' | 'per_term') => {
+    setSubTab(newSub)
+    const newMain = (newSub === 'trial_class' || newSub === 'per_term') ? 'penilaian' : 'progress'
+    setMainTab(newMain)
+    updateTabUrl(newMain, newSub)
+  }
 
   // Check notes states (Trainer only)
   const [addingNoteTermId, setAddingNoteTermId] = useState<number | null>(null)
@@ -804,7 +864,17 @@ export function TraineeDetailClient({
     (t) => t.traineeTerm?.status === 'ready_for_check'
   ).length
 
-  const activeLevelTerms = levelTab === 'kinder' ? kinderTerms : juniorTerms
+  // Sort all assigned terms by level (Kinder first, then Junior) and sortOrder
+  const sortedTerms = useMemo(() => {
+    return [...terms].sort((a, b) => {
+      if (a.level !== b.level) {
+        return a.level === 'kinder' ? -1 : 1
+      }
+      return a.sortOrder - b.sortOrder
+    })
+  }, [terms])
+
+  const activeLevelTerms = subTab === 'junior' ? juniorTerms : kinderTerms
 
   const trialClassCount = trialClasses.length
   const evaluatedTrials = trialClasses.filter(
@@ -1196,128 +1266,164 @@ export function TraineeDetailClient({
         </div>
       </div>
 
-      {/* Level & Trial Class Tabs */}
+      {/* NAVIGASI DUA TINGKAT */}
       <div className="space-y-4">
+        {/* TINGKAT 1: Selalu terlihat penuh tanpa scroll horizontal */}
+        <div className="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80">
+          <button
+            type="button"
+            onClick={() => handleSelectMainTab('progress')}
+            className={`py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+              mainTab === 'progress'
+                ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <GraduationCap className="w-4 h-4 shrink-0" />
+            <span>Progress Belajar</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSelectMainTab('penilaian')}
+            title="Hanya terlihat trainer"
+            className={`py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+              mainTab === 'penilaian'
+                ? 'bg-white dark:bg-slate-900 text-teal-600 dark:text-teal-400 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <Lock className="w-4 h-4 shrink-0" />
+            <span>Penilaian</span>
+          </button>
+        </div>
+
+        {/* TINGKAT 2 (SUB-TAB): Disesuaikan dengan pilihan Tingkat 1 */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
-          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700/60 overflow-x-auto">
-            <button
-              type="button"
-              onClick={() => setLevelTab('kinder')}
-              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
-                levelTab === 'kinder'
-                  ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <span>Kinder Level ({kinderTerms.length} Term)</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 font-mono">
-                {kinderStudied}/{kinderTerms.length * 10}
-              </span>
-              {kinderNeedCheck > 0 && (
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Ada term Ready for Check" />
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setLevelTab('junior')}
-              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
-                levelTab === 'junior'
-                  ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <span>Junior Level ({juniorTerms.length} Term)</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 font-mono">
-                {juniorStudied}/{juniorTerms.length * 10}
-              </span>
-              {juniorNeedCheck > 0 && (
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Ada term Ready for Check" />
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setLevelTab('trial_class')}
-              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
-                levelTab === 'trial_class'
-                  ? 'bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <span>Trial Class ({trialClassCount} Sesi)</span>
-              {trialClassCount > 0 && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-300 font-mono flex items-center gap-0.5">
-                  <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-500" />
-                  <span>{overallTrialAvg.toFixed(1)}</span>
+          {/* Sub-tabs untuk Progress Belajar */}
+          {mainTab === 'progress' && (
+            <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-100/80 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 overflow-x-auto">
+              <button
+                type="button"
+                onClick={() => handleSelectSubTab('kinder')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                  subTab === 'kinder'
+                    ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs font-bold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <span>Kinder ({kinderTerms.length})</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 font-mono">
+                  {kinderStudied}/{kinderTerms.length * 10}
                 </span>
-              )}
-            </button>
+                {kinderNeedCheck > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Ada term Ready for Check" />
+                )}
+              </button>
 
-            <button
-              type="button"
-              onClick={() => setLevelTab('term_evaluation')}
-              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
-                levelTab === 'term_evaluation'
-                  ? 'bg-white dark:bg-slate-900 text-teal-600 dark:text-teal-400 shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <span>Penilaian Term ({terms.length} Term)</span>
-            </button>
-          </div>
-
-          {levelTab === 'term_evaluation' ? (
-            <div className="text-xs text-slate-500 dark:text-slate-400">
-              <span>Update Progress &amp; Final Project Video (Trainer Saja)</span>
+              <button
+                type="button"
+                onClick={() => handleSelectSubTab('junior')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                  subTab === 'junior'
+                    ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-2xs font-bold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <span>Junior ({juniorTerms.length})</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 font-mono">
+                  {juniorStudied}/{juniorTerms.length * 10}
+                </span>
+                {juniorNeedCheck > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Ada term Ready for Check" />
+                )}
+              </button>
             </div>
-          ) : levelTab === 'trial_class' ? (
-            <button
-              type="button"
-              onClick={() => setIsAssignTrialOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer self-start sm:self-auto"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Tugaskan Trial Class</span>
-            </button>
-          ) : (
+          )}
+
+          {/* Sub-tabs untuk Penilaian */}
+          {mainTab === 'penilaian' && (
+            <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-100/80 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 overflow-x-auto">
+              <button
+                type="button"
+                onClick={() => handleSelectSubTab('trial_class')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                  subTab === 'trial_class'
+                    ? 'bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-2xs font-bold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <span>Trial Class ({trialClassCount})</span>
+                {trialClassCount > 0 && (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-300 font-mono flex items-center gap-0.5">
+                    <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-500" />
+                    <span>{overallTrialAvg.toFixed(1)}</span>
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSelectSubTab('per_term')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                  subTab === 'per_term'
+                    ? 'bg-white dark:bg-slate-900 text-teal-600 dark:text-teal-400 shadow-2xs font-bold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <span>Per Term ({terms.length})</span>
+              </button>
+            </div>
+          )}
+
+          {/* Right side actions in Tingkat 2 header */}
+          {mainTab === 'progress' ? (
             <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-3">
               <span>
                 Self-Training Done:{' '}
                 <strong className="text-emerald-600 dark:text-emerald-400">
-                  {levelTab === 'kinder' ? kinderReadyForTrial : juniorReadyForTrial}/
-                  {levelTab === 'kinder' ? kinderTerms.length : juniorTerms.length} Term
+                  {subTab === 'kinder' ? kinderReadyForTrial : juniorReadyForTrial}/
+                  {subTab === 'kinder' ? kinderTerms.length : juniorTerms.length} Term
                 </strong>
               </span>
               <span>•</span>
               <span>
                 Layak Mengajar:{' '}
                 <strong className="text-amber-600 dark:text-amber-400">
-                  {levelTab === 'kinder' ? kinderCleared : juniorCleared}/
-                  {levelTab === 'kinder' ? kinderTerms.length : juniorTerms.length} Term
+                  {subTab === 'kinder' ? kinderCleared : juniorCleared}/
+                  {subTab === 'kinder' ? kinderTerms.length : juniorTerms.length} Term
                 </strong>
               </span>
             </div>
-          )}
+          ) : subTab === 'trial_class' ? (
+            <button
+              type="button"
+              onClick={() => setIsAssignTrialOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer self-start sm:self-auto"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Tugaskan Trial Class</span>
+            </button>
+          ) : null}
         </div>
 
-        {/* Tab Content */}
-        {levelTab === 'term_evaluation' ? (
-          /* TAB PENILAIAN TERM (UPDATE PROGRESS & FINAL PROJECT) */
-          <div className="space-y-4">
-            <div className="p-4 rounded-xl bg-teal-50 dark:bg-teal-950/30 border border-teal-200 dark:border-teal-800/60 text-xs text-teal-800 dark:text-teal-300 flex items-start gap-3 shadow-xs">
-              <Sparkles className="w-5 h-5 text-teal-600 dark:text-teal-400 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-semibold text-teal-900 dark:text-teal-200">
-                  Penilaian Kompetensi Pasca Self-Training (Trainer Saja)
-                </p>
-                <p className="mt-0.5 text-teal-700 dark:text-teal-400 leading-relaxed">
-                  Menilai kemampuan instruktur dalam <strong>Update Progress ke Orang Tua</strong> (pertemuan 8/9 tiap term) dan standardisasi <strong>Video Final Project</strong>. Penilaian ini bersifat evaluatif independen dan hanya dapat diakses oleh Trainer.
-                </p>
-              </div>
+        {/* Tab Content based on mainTab & subTab */}
+        {mainTab === 'penilaian' ? (
+          subTab === 'per_term' ? (
+          /* TAB PENILAIAN PER TERM (TABLE VIEW) */
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Penilaian pasca self-training, hanya terlihat trainer.
+              </p>
+              {terms.length > 0 && (
+                <span className="text-[11px] font-medium text-slate-400 self-start sm:self-auto">
+                  Total {sortedTerms.length} Term Di-assign
+                </span>
+              )}
             </div>
 
-            {terms.length === 0 ? (
+            {sortedTerms.length === 0 ? (
               <div className="p-10 text-center rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
                 <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
                   Belum ada term yang di-assign untuk trainee ini. Assign term terlebih dahulu untuk memberikan penilaian.
@@ -1332,35 +1438,198 @@ export function TraineeDetailClient({
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {terms.map((t) => {
-                  const ttId = t.traineeTerm?.id
-                  const updates = t.progressUpdates || []
-                  const projects = t.finalProjects || []
-                  const latestUpdate = updates.length > 0 ? updates[0] : null
-                  const latestProject = projects.length > 0 ? projects[0] : null
+              <>
+                {/* Desktop / Tablet Table View (Tinggi baris ringkas ~48px, horizontal scroll dalam wadah jika sempit) */}
+                <div className="hidden md:block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-x-auto shadow-xs">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-50/80 dark:bg-slate-800/60 text-slate-500 uppercase tracking-wider text-[11px] border-b border-slate-200 dark:border-slate-800">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold whitespace-nowrap w-[32%]">Term</th>
+                        <th className="px-4 py-3 font-semibold w-[33%]">Update Progress</th>
+                        <th className="px-4 py-3 font-semibold w-[23%]">Final Project</th>
+                        <th className="px-4 py-3 font-semibold text-right w-[12%]">Riwayat</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {sortedTerms.map((t) => {
+                        const ttId = t.traineeTerm?.id
+                        const updates = t.progressUpdates || []
+                        const projects = t.finalProjects || []
+                        const latestUpdate = updates.length > 0 ? updates[0] : null
+                        const latestProject = projects.length > 0 ? projects[0] : null
 
-                  const avgUpdateScore = latestUpdate
-                    ? (latestUpdate.scoreAccuracy +
-                        latestUpdate.scoreClarity +
-                        latestUpdate.scoreTimeliness +
-                        latestUpdate.scoreFollowup) /
-                      4
-                    : null
+                        const avgUpdateScore = latestUpdate
+                          ? (latestUpdate.scoreAccuracy +
+                              latestUpdate.scoreClarity +
+                              latestUpdate.scoreTimeliness +
+                              latestUpdate.scoreFollowup) /
+                            4
+                          : null
 
-                  return (
-                    <div
-                      key={t.termId}
-                      className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between gap-4"
-                    >
-                      <div className="space-y-4">
-                        {/* Term Header */}
-                        <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-3">
-                          <div>
-                            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                        return (
+                          <tr
+                            key={t.termId}
+                            className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors h-12"
+                          >
+                            {/* Term column: "Kinder · Foundation 1" label */}
+                            <td className="px-4 py-2.5">
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider shrink-0 ${
+                                    t.level === 'kinder'
+                                      ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
+                                      : 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
+                                  }`}
+                                >
+                                  {t.level === 'kinder' ? 'Kinder' : 'Junior'}
+                                </span>
+                                <span className="font-semibold text-slate-800 dark:text-slate-100 truncate">
+                                  {t.name}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* Update Progress column */}
+                            <td className="px-4 py-2.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  {latestUpdate && avgUpdateScore !== null ? (
+                                    <>
+                                      <span className="inline-flex items-center gap-1 font-bold text-amber-600 dark:text-amber-400">
+                                        <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500 shrink-0" />
+                                        <span>{avgUpdateScore.toFixed(1)}</span>
+                                      </span>
+                                      <span className="text-slate-300 dark:text-slate-600">·</span>
+                                      <span className="text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                                        {new Date(latestUpdate.evaluationDate).toLocaleDateString('id-ID', {
+                                          day: 'numeric',
+                                          month: 'short',
+                                        })}
+                                      </span>
+                                      <span className="text-slate-300 dark:text-slate-600">·</span>
+                                      <span className="px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                                        {updates.length}×
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <span className="text-slate-400 italic">Belum dinilai</span>
+                                  )}
+                                </div>
+
+                                {ttId && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenCreateProgress(ttId, t.name)}
+                                    className="p-1 px-1.5 rounded-md text-[11px] font-bold text-teal-600 hover:text-white hover:bg-teal-600 dark:text-teal-400 dark:hover:bg-teal-600 dark:hover:text-white border border-teal-200 dark:border-teal-800/80 transition-colors shrink-0 cursor-pointer"
+                                    title="Nilai Update Progress"
+                                  >
+                                    [+]
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+
+                            {/* Final Project column */}
+                            <td className="px-4 py-2.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  {latestProject ? (
+                                    <>
+                                      <span
+                                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${
+                                          latestProject.result === 'meets_standard'
+                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
+                                            : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800'
+                                        }`}
+                                      >
+                                        {latestProject.result === 'meets_standard'
+                                          ? 'Sesuai standar'
+                                          : 'Belum sesuai'}
+                                      </span>
+                                      <span className="text-slate-300 dark:text-slate-600">·</span>
+                                      <span className="text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                                        {new Date(latestProject.evaluationDate).toLocaleDateString('id-ID', {
+                                          day: 'numeric',
+                                          month: 'short',
+                                        })}
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <span className="text-slate-400 italic">Belum dinilai</span>
+                                  )}
+                                </div>
+
+                                {ttId && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenCreateFinalProject(ttId, t.name)}
+                                    className="p-1 px-1.5 rounded-md text-[11px] font-bold text-teal-600 hover:text-white hover:bg-teal-600 dark:text-teal-400 dark:hover:bg-teal-600 dark:hover:text-white border border-teal-200 dark:border-teal-800/80 transition-colors shrink-0 cursor-pointer"
+                                    title="Nilai Final Project"
+                                  >
+                                    [+]
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+
+                            {/* Riwayat column: opens drawer */}
+                            <td className="px-4 py-2.5 text-right">
+                              <button
+                                type="button"
+                                onClick={() => setHistoryModalTerm(t)}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-teal-600 dark:text-slate-400 dark:hover:text-teal-400 cursor-pointer transition-colors"
+                                title="Buka drawer riwayat"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span>Riwayat</span>
+                                {(updates.length + projects.length > 0) && (
+                                  <span className="text-[10px] text-slate-400">
+                                    ({updates.length + projects.length})
+                                  </span>
+                                )}
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile View: Kartu Tipis per Term (Tanpa scroll horizontal halaman) */}
+                <div className="md:hidden space-y-2.5">
+                  {sortedTerms.map((t) => {
+                    const ttId = t.traineeTerm?.id
+                    const updates = t.progressUpdates || []
+                    const projects = t.finalProjects || []
+                    const latestUpdate = updates.length > 0 ? updates[0] : null
+                    const latestProject = projects.length > 0 ? projects[0] : null
+
+                    const avgUpdateScore = latestUpdate
+                      ? (latestUpdate.scoreAccuracy +
+                          latestUpdate.scoreClarity +
+                          latestUpdate.scoreTimeliness +
+                          latestUpdate.scoreFollowup) /
+                        4
+                      : null
+
+                    return (
+                      <div
+                        key={t.termId}
+                        className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2.5"
+                      >
+                        <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-2">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                                t.level === 'kinder'
+                                  ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
+                                  : 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
+                              }`}
+                            >
                               {t.level === 'kinder' ? 'Kinder' : 'Junior'}
                             </span>
-                            <h4 className="font-bold text-slate-900 dark:text-white text-base mt-1">
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-white">
                               {t.name}
                             </h4>
                           </div>
@@ -1368,142 +1637,93 @@ export function TraineeDetailClient({
                           <button
                             type="button"
                             onClick={() => setHistoryModalTerm(t)}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                            title="Lihat seluruh riwayat penilaian term ini"
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-600 dark:text-teal-400 cursor-pointer"
                           >
-                            <History className="w-3.5 h-3.5" />
-                            <span>Riwayat ({updates.length + projects.length})</span>
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Riwayat</span>
+                            {(updates.length + projects.length > 0) && (
+                              <span className="text-[10px] text-slate-400">
+                                ({updates.length + projects.length})
+                              </span>
+                            )}
                           </button>
                         </div>
 
-                        {/* Sub-card 1: Update Progress */}
-                        <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60 space-y-2">
+                        <div className="space-y-2 text-xs">
+                          {/* Update Progress row */}
                           <div className="flex items-center justify-between gap-2">
-                            <span className="font-semibold text-xs text-slate-700 dark:text-slate-300">
-                              Update Progress ke Orang Tua
-                            </span>
-                            {latestUpdate && avgUpdateScore !== null ? (
-                              <div className="flex items-center gap-1 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded-full border border-amber-200/60 dark:border-amber-800/60">
-                                <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
-                                <span className="font-bold text-xs text-amber-700 dark:text-amber-400">
-                                  {avgUpdateScore.toFixed(1)}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[11px] text-slate-400">Update Progress:</span>
+                              {latestUpdate && avgUpdateScore !== null ? (
+                                <span className="inline-flex items-center gap-1 font-bold text-amber-600 dark:text-amber-400 text-xs">
+                                  <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                                  <span>{avgUpdateScore.toFixed(1)}</span>
+                                  <span className="text-slate-400 font-normal">
+                                    · {new Date(latestUpdate.evaluationDate).toLocaleDateString('id-ID', {
+                                      day: 'numeric',
+                                      month: 'short',
+                                    })}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-normal">({updates.length}×)</span>
                                 </span>
-                                <span className="text-[10px] text-amber-600/70 dark:text-amber-400/70">/ 5.0</span>
-                              </div>
-                            ) : (
-                              <span className="text-[11px] text-slate-400 italic">Belum dinilai</span>
-                            )}
-                          </div>
-
-                          {latestUpdate ? (
-                            <div className="space-y-1.5 pt-1">
-                              <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
-                                <span>
-                                  {latestUpdate.meetingNumber
-                                    ? `Pertemuan ${latestUpdate.meetingNumber}`
-                                    : 'Pertemuan umum'}
-                                </span>
-                                <span>
-                                  {new Date(latestUpdate.evaluationDate).toLocaleDateString('id-ID', {
-                                    day: 'numeric',
-                                    month: 'short',
-                                    year: 'numeric',
-                                  })}
-                                </span>
-                              </div>
-                              {latestUpdate.notes && (
-                                <p className="text-[11px] text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700/60 line-clamp-2">
-                                  "{latestUpdate.notes}"
-                                </p>
+                              ) : (
+                                <span className="text-slate-400 italic text-xs">Belum dinilai</span>
                               )}
                             </div>
-                          ) : (
-                            <p className="text-[11px] text-slate-400">
-                              Evaluasi penyampaian progres anak di pertemuan 8 atau 9.
-                            </p>
-                          )}
-
-                          {ttId && (
-                            <div className="pt-1.5 flex justify-end">
+                            {ttId && (
                               <button
                                 type="button"
                                 onClick={() => handleOpenCreateProgress(ttId, t.name)}
-                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-600 hover:text-teal-700 dark:text-teal-400 cursor-pointer"
+                                className="px-2 py-0.5 rounded text-[11px] font-bold text-teal-600 border border-teal-200 dark:border-teal-800/80 cursor-pointer"
                               >
-                                <Plus className="w-3 h-3" />
-                                <span>{latestUpdate ? 'Nilai Ulang / Tambah' : 'Nilai Update Progress'}</span>
+                                [+]
                               </button>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Sub-card 2: Final Project */}
-                        <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60 space-y-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-semibold text-xs text-slate-700 dark:text-slate-300">
-                              Video Final Project
-                            </span>
-                            {latestProject ? (
-                              <span
-                                className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                                  latestProject.result === 'meets_standard'
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
-                                    : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800'
-                                }`}
-                              >
-                                {latestProject.result === 'meets_standard'
-                                  ? 'Sesuai Standar'
-                                  : 'Belum Sesuai'}
-                              </span>
-                            ) : (
-                              <span className="text-[11px] text-slate-400 italic">Belum dinilai</span>
                             )}
                           </div>
 
-                          {latestProject ? (
-                            <div className="space-y-1.5 pt-1">
-                              <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
-                                <span>Dinilai {new Date(latestProject.evaluationDate).toLocaleDateString('id-ID', {
-                                  day: 'numeric',
-                                  month: 'short',
-                                  year: 'numeric',
-                                })}</span>
-                                <span className="text-[10px] text-slate-400">oleh {latestProject.evaluatorName}</span>
-                              </div>
-                              {latestProject.notes && (
-                                <p className="text-[11px] text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700/60 line-clamp-2">
-                                  "{latestProject.notes}"
-                                </p>
+                          {/* Final Project row */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[11px] text-slate-400">Final Project:</span>
+                              {latestProject ? (
+                                <span
+                                  className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                                    latestProject.result === 'meets_standard'
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
+                                      : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800'
+                                  }`}
+                                >
+                                  {latestProject.result === 'meets_standard' ? 'Sesuai standar' : 'Belum sesuai'}
+                                  <span className="text-slate-400 font-normal ml-1">
+                                    · {new Date(latestProject.evaluationDate).toLocaleDateString('id-ID', {
+                                      day: 'numeric',
+                                      month: 'short',
+                                    })}
+                                  </span>
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 italic text-xs">Belum dinilai</span>
                               )}
                             </div>
-                          ) : (
-                            <p className="text-[11px] text-slate-400">
-                              Evaluasi kualitas video project akhir yang diedit oleh instruktur.
-                            </p>
-                          )}
-
-                          {ttId && (
-                            <div className="pt-1.5 flex justify-end">
+                            {ttId && (
                               <button
                                 type="button"
                                 onClick={() => handleOpenCreateFinalProject(ttId, t.name)}
-                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-600 hover:text-teal-700 dark:text-teal-400 cursor-pointer"
+                                className="px-2 py-0.5 rounded text-[11px] font-bold text-teal-600 border border-teal-200 dark:border-teal-800/80 cursor-pointer"
                               >
-                                <Plus className="w-3 h-3" />
-                                <span>{latestProject ? 'Nilai Ulang / Tambah' : 'Nilai Final Project'}</span>
+                                [+]
                               </button>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )
-                })}
-              </div>
+                    )
+                  })}
+                </div>
+              </>
             )}
-          </div>
-        ) : levelTab === 'trial_class' ? (
-          /* TRIAL CLASS TAB CONTENT */
+          </div>          ) : (
+/* TRIAL CLASS TAB CONTENT */
           <div className="space-y-4">
             {/* Summary Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
@@ -1680,13 +1900,12 @@ export function TraineeDetailClient({
                 </div>
               </div>
             )}
-          </div>
+          </div>          )
         ) : (
-          /* KINDER / JUNIOR TAB CONTENT */
-          activeLevelTerms.length === 0 ? (
+activeLevelTerms.length === 0 ? (
             <div className="p-10 text-center rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-                Belum ada term {levelTab === 'kinder' ? 'Kinder' : 'Junior'} yang di-assign untuk trainee ini.
+                Belum ada term {subTab === 'kinder' ? 'Kinder' : 'Junior'} yang di-assign untuk trainee ini.
               </p>
               <button
                 type="button"
@@ -1694,7 +1913,7 @@ export function TraineeDetailClient({
                 className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition-all cursor-pointer"
               >
                 <Layers className="w-3.5 h-3.5" />
-                <span>Assign Term {levelTab === 'kinder' ? 'Kinder' : 'Junior'}</span>
+                <span>Assign Term {subTab === 'kinder' ? 'Kinder' : 'Junior'}</span>
               </button>
             </div>
           ) : (
@@ -3445,29 +3664,34 @@ export function TraineeDetailClient({
         </div>
       )}
 
-      {/* MODAL RIWAYAT PENILAIAN TERM */}
+      {/* DRAWER RIWAYAT PENILAIAN TERM (Laci Samping) */}
       {historyModalTerm && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-2xl w-full p-6 border border-slate-200 dark:border-slate-800 shadow-xl space-y-4 my-8">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <div>
-                <h3 className="font-bold text-base text-slate-900 dark:text-white">
-                  Riwayat Penilaian: {historyModalTerm.name}
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Daftar seluruh penilaian Update Progress dan Final Project untuk term ini
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex justify-end animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 h-full shadow-2xl border-l border-slate-200 dark:border-slate-800 flex flex-col animate-in slide-in-from-right duration-200">
+            {/* Drawer Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <RotateCcw className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
+                  <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white truncate">
+                    Riwayat: {historyModalTerm.name}
+                  </h3>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  Update Progress &amp; Final Project term ini
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setHistoryModalTerm(null)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-1">
+            {/* Drawer Body */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-6">
               {/* Seksi Update Progress */}
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
@@ -3661,7 +3885,8 @@ export function TraineeDetailClient({
               </div>
             </div>
 
-            <div className="flex justify-end pt-3 border-t border-slate-100 dark:border-slate-800">
+            {/* Drawer Footer */}
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex justify-end shrink-0">
               <button
                 type="button"
                 onClick={() => setHistoryModalTerm(null)}

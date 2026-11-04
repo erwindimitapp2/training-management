@@ -8,10 +8,12 @@ export const dynamic = 'force-dynamic'
 
 interface PageProps {
   params: Promise<{ id: string }>
+  searchParams?: Promise<{ tab?: string; sub?: string }>
 }
 
-export default async function TraineeDetailPage({ params }: PageProps) {
+export default async function TraineeDetailPage({ params, searchParams }: PageProps) {
   const { id: traineeId } = await params
+  const resolvedSearchParams = searchParams ? await searchParams : {}
 
   try {
     const supabase = await createClient()
@@ -465,6 +467,8 @@ export default async function TraineeDetailPage({ params }: PageProps) {
 
         <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 lg:p-8">
           <TraineeDetailClient
+            initialTab={resolvedSearchParams.tab}
+            initialSubTab={resolvedSearchParams.sub}
             trainee={{
               id: traineeData.id,
               name: traineeData.name,
